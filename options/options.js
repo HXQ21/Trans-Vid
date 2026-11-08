@@ -35,20 +35,20 @@ async function save() {
   o.apiBase = BSUB_DEFAULTS.apiBase;
   o.apiModel = BSUB_DEFAULTS.apiModel;
   await chrome.storage.local.set(o);
-  return o.apiKey ? grantApi(o.apiBase) : '';
+  return grantAll(o);
 }
 
-// Key thuê: extension cần quyền gọi tới địa chỉ API đó (Chrome hỏi một lần). Trả về lời nhắc nếu chưa có quyền.
-async function grantApi(base) {
-  if (!base) return '';
-  let origin;
-  try { origin = new URL(base).origin + '/*'; } catch (e) { return 'Địa chỉ API không hợp lệ.'; }
-  if (!/^https:/.test(origin)) return 'Địa chỉ API phải bắt đầu bằng https://';
+// Xin quyền gọi các dịch vụ cần dùng (Chrome hỏi một lần). Trả về lời nhắc nếu còn thiếu quyền.
+// Chrome có thể đang chặn cả quyền khai báo sẵn (mục "Truy cập trang web" bị hạn chế): xin lại luôn.
+async function grantAll(cfg) {
+  const want = bsubNeededOrigins(cfg);
   try {
-    if (await chrome.permissions.contains({ origins: [origin] })) return '';
-    return (await chrome.permissions.request({ origins: [origin] })) ? '' : 'Chưa cấp quyền gọi ' + origin + ': key thuê sẽ không chạy.';
+    const missing = [];
+    for (const o of want) if (!(await chrome.permissions.contains({ origins: [o] }))) missing.push(o);
+    if (!missing.length) return '';
+    return (await chrome.permissions.request({ origins: missing })) ? '' : 'Chưa cấp quyền gọi ' + missing.join(', ') + ': dịch / giọng đọc sẽ lỗi.';
   } catch (e) {
-    return 'Bấm nút Lưu để cấp quyền gọi ' + origin + '.';
+    return 'Bấm nút Lưu để cấp quyền gọi dịch vụ dịch và giọng đọc.';
   }
 }
 

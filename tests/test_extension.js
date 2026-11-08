@@ -9,7 +9,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
 function loadShared() {
   const ctx = { console, chrome: { storage: { local: { get() {} } } } };
   vm.createContext(ctx);
-  vm.runInContext(fs.readFileSync(path.join(DIR, 'lib/shared.js'), 'utf8') + '\n;this.S = {}; for (const n of ["bsubCleanSource", "bsubSpeakable", "bsubSourceLang", "bsubIsVi", "bsubIsAutoLabel", "bsubPickCaption", "bsubParseVtt", "bsubLangName", "bsubSegmentSentences", "bsubAiOn", "bsubAiId"]) { try { this.S[n] = eval(n); } catch (e) { this.S[n] = null; } }', ctx);
+  vm.runInContext(fs.readFileSync(path.join(DIR, 'lib/shared.js'), 'utf8') + '\n;this.S = {}; for (const n of ["bsubCleanSource", "bsubSpeakable", "bsubSourceLang", "bsubIsVi", "bsubIsAutoLabel", "bsubPickCaption", "bsubParseVtt", "bsubLangName", "bsubSegmentSentences", "bsubAiOn", "bsubAiId", "bsubNeededOrigins"]) { try { this.S[n] = eval(n); } catch (e) { this.S[n] = null; } }', ctx);
   return ctx.S;
 }
 
@@ -732,6 +732,69 @@ function fakePage({ pageV = 'MAIN', ccPressed = 'false', voice = 'auto', geminiK
     await sleep(400);
     check('âm lượng video giữ nguyên khi đọc', P.video.volume === 1, P.video.volume);
     check('bỏ cài đặt duck', !/\bduck\b/.test(fs.readFileSync(path.join(DIR, 'lib/shared.js'), 'utf8')));
+  }
+
+  console.log('38. Tab ẩn: trình duyệt / YouTube dừng video đang tắt tiếng -> tự chạy lại (người dùng tự dừng thì không)');
+  {
+    const P = fakePage({ ccPressed: 'true' });
+    let plays = 0;
+    P.video.play = () => { plays++; P.video.paused = false; return Promise.resolve(); };
+    await sleep(700);
+    check('đang lồng tiếng: video bị tắt tiếng', P.video.muted === true);
+    // Người dùng tự dừng khi tab đang hiện: không tự chạy lại.
+    P.ctx.document.hidden = false;
+    P.video.paused = true; P.video.fire('pause');
+    await sleep(100);
+    check('tab đang hiện, người dùng dừng -> không tự chạy lại', plays === 0, plays);
+    // Tab ẩn: bị dừng -> tự chạy lại.
+    P.ctx.document.hidden = true;
+    P.video.paused = true; P.video.fire('pause');
+    await sleep(100);
+    check('tab ẩn, video bị dừng -> tự chạy lại', plays === 1 && P.video.paused === false, plays);
+    // Bị dừng liên tục: chỉ thử tối đa 3 lần (không lặp vô hạn).
+    for (let i = 0; i < 5; i++) { P.video.paused = true; P.video.fire('pause'); await sleep(30); }
+    check('chỉ tự chạy lại tối đa 3 lần mỗi lần ẩn tab', plays === 3, plays);
+    // Tắt lồng tiếng: không can thiệp nữa.
+    const Q = fakePage({ autoDub: false });
+    let qp = 0;
+    Q.video.play = () => { qp++; return Promise.resolve(); };
+    await sleep(700);
+    Q.ctx.document.hidden = true;
+    Q.video.paused = true; Q.video.fire('pause');
+    await sleep(100);
+    check('không lồng tiếng -> không can thiệp', qp === 0, qp);
+  }
+
+  console.log('37. Giọng Google: gọi không kèm cookie (cookie đăng nhập Google làm bị chuyển hướng -> Failed to fetch); có phép dò');
+  {
+    const inits = [];
+    const resp = (status, body) => ({ ok: status < 300, status, type: 'basic', json: async () => body, text: async () => '', arrayBuffer: async () => new Uint8Array([1, 2, 3]).buffer });
+    const ctx = { console, fetch: async (url, init = {}) => { inits.push({ url, init }); return resp(200, {}); }, setTimeout, clearTimeout, AbortController, btoa, atob, URL, encodeURIComponent, decodeURIComponent, Uint8Array, DataView, String, JSON, Math, Promise, Error, Object, Array, Date, parseFloat };
+    ctx.chrome = { runtime: { onInstalled: { addListener() {} }, onMessage: { addListener(f) { ctx.handler = f; } } },
+      storage: { local: { get(d, cb) { cb({ ...d }); }, set: () => Promise.resolve() } } };
+    ctx.importScripts = f => vm.runInContext(fs.readFileSync(path.join(DIR, f), 'utf8'), ctx);
+    vm.createContext(ctx);
+    vm.runInContext(fs.readFileSync(path.join(DIR, 'background.js'), 'utf8'), ctx);
+    const call = m => new Promise(r => ctx.handler(m, {}, r));
+    const r = await call({ type: 'tts', text: 'Xin chào', voice: 'google' });
+    const tts = inits.find(x => x.url.includes('translate_tts'));
+    check('tạo giọng Google ok', r.ok && r.engine === 'google', r);
+    check('gọi giọng Google không kèm cookie', tts && tts.init.credentials === 'omit', tts && tts.init);
+    const p = await Promise.race([call({ type: 'probeTts' }), sleep(1000).then(() => ({ ok: false, error: 'không trả lời' }))]);
+    check('có phép dò giọng Google (có cookie / không cookie)', p.ok && typeof p.withCookies === 'string' && typeof p.noCookies === 'string', p);
+  }
+
+  console.log('36. Quyền truy cập cần có (để Cài đặt xin lại khi Chrome chặn, Chẩn đoán báo rõ)');
+  {
+    const f = S.bsubNeededOrigins;
+    check('có hàm bsubNeededOrigins', typeof f === 'function');
+    if (typeof f === 'function') {
+      const base = f({ apiKey: '', geminiKey: '', azureKey: '', apiBase: 'https://api.vilao.ai/v1' });
+      check('luôn cần Google Dịch + giọng Google', base.includes('https://translate.googleapis.com/*') && base.includes('https://translate.google.com/*'), base);
+      check('không key -> không xin Vilao / Gemini / Azure', !base.some(o => /vilao|generativelanguage|microsoft/.test(o)), base);
+      const all = f({ apiKey: 'SK', geminiKey: 'G', azureKey: 'A', apiBase: 'https://api.vilao.ai/v1' });
+      check('có key -> xin đúng địa chỉ của key', ['https://api.vilao.ai/*', 'https://generativelanguage.googleapis.com/*', 'https://*.tts.speech.microsoft.com/*'].every(o => all.includes(o)), all);
+    }
   }
 
   console.log('35. Chuyển sang tab khác (Chrome hãm hẹn giờ): vẫn đọc tiếp nhờ sự kiện timeupdate của video');

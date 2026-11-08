@@ -5,7 +5,7 @@ chrome.runtime.onInstalled.addListener(d => {
 });
 
 chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
-  const handler = { translate: onTranslate, tts: onTts, test: onTest }[msg && msg.type];
+  const handler = { translate: onTranslate, tts: onTts, test: onTest, probeTts: onProbeTts }[msg && msg.type];
   if (!handler) return false;
   handler(msg).then(
     r => reply({ ok: true, ...r }),
@@ -186,7 +186,7 @@ async function geminiTranslate(cfg, lines, srcName, ctx = {}) {
 // ---- Dịch bằng Google Dịch (miễn phí, không cần key) ----
 async function googleOne(text, sl) {
   const u = 'https://translate.googleapis.com/translate_a/single?client=gtx&dt=t&tl=vi&sl=' + sl + '&q=' + encodeURIComponent(text);
-  const data = await (await request(u, {})).json();
+  const data = await (await request(u, { credentials: 'omit' })).json();   // không kèm cookie Google (xem googleTts)
   return (data[0] || []).map(s => s[0] || '').join('');
 }
 
@@ -277,13 +277,29 @@ async function googleTts(text) {
   const bufs = [];
   for (const p of splitText(text)) {
     const u = 'https://translate.google.com/translate_tts?ie=UTF-8&tl=vi&client=tw-ob&q=' + encodeURIComponent(p);
-    bufs.push(new Uint8Array(await (await request(u, {}, 2)).arrayBuffer()));
+    // Không kèm cookie: đang đăng nhập Google thì có cookie làm Google chuyển hướng sang trang khác
+    // (ngoài quyền của extension) -> "Failed to fetch". Giọng đọc không cần đăng nhập.
+    bufs.push(new Uint8Array(await (await request(u, { credentials: 'omit' }, 2)).arrayBuffer()));
   }
   const total = bufs.reduce((n, b) => n + b.length, 0);
   const bytes = new Uint8Array(total);
   let off = 0;
   for (const b of bufs) { bytes.set(b, off); off += b.length; }
   return { audio: toBase64(bytes), mime: 'audio/mpeg', engine: 'google' };
+}
+
+// Chẩn đoán: gọi thử giọng Google có cookie / không cookie, không theo chuyển hướng, để biết vì sao lỗi.
+async function onProbeTts() {
+  const u = 'https://translate.google.com/translate_tts?ie=UTF-8&tl=vi&client=tw-ob&q=' + encodeURIComponent('xin chào');
+  const probe = async credentials => {
+    try {
+      const r = await fetch(u, { credentials, redirect: 'manual', cache: 'no-store' });
+      return r.type === 'opaqueredirect' ? 'BỊ CHUYỂN HƯỚNG' : 'HTTP ' + r.status;
+    } catch (e) {
+      return 'LỖI ' + ((e && e.message) || e);
+    }
+  };
+  return { withCookies: await probe('include'), noCookies: await probe('omit') };
 }
 
 // ---- Giọng Microsoft Nam Minh / Hoài My qua Azure Speech (API chính thức, cần key) ----

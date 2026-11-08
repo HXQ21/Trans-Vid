@@ -178,6 +178,10 @@
     const pv = pendingVtt; pendingVtt = null; handleVtt(pv.url, pv.text);
   }
   document.addEventListener('yt-navigate-start', () => { unsupportedLang = ''; resetCues(); });
+  document.addEventListener('visibilitychange', () => {
+    D(document.hidden ? 'TAB ẨN (chuyển sang tab khác)' : 'TAB HIỆN LẠI');
+    if (!document.hidden) hiddenResumes = 0;
+  });
 
   function attr(a, n) {
     const m = new RegExp('\\b' + n + '="([^"]*)"').exec(a);
@@ -431,6 +435,18 @@
   // Tab bị ẩn (chuyển sang tab khác): Chrome hãm setTimeout (1 lần/giây, im lặng lâu thì 1 lần/phút),
   // nên canh giờ thêm theo sự kiện timeupdate của chính video (vẫn chạy ~4 lần/giây khi video phát).
   let lastMediaTick = 0;
+
+  // Tab ẩn + video đang tắt tiếng: Cốc Cốc / Chrome (hoặc trình phát) tự dừng video để tiết kiệm pin
+  // (đã thấy trong nhật ký người dùng). Đang lồng tiếng thì cho chạy lại, tối đa 3 lần mỗi lần ẩn tab.
+  // Tab đang hiện thì là người dùng tự dừng: không đụng vào.
+  let hiddenResumes = 0;
+  function onVideoPause(v) {
+    D('VIDEO DỪNG' + (document.hidden ? ' (tab đang ẩn)' : '') + (v.muted ? ', đang tắt tiếng' : ''));
+    if (!document.hidden || v !== video || !cfg.enabled || !isOn() || hiddenResumes >= 3) return;
+    hiddenResumes++;
+    Promise.resolve(v.play()).then(() => D('  tự chạy lại video (tab ẩn, lần ' + hiddenResumes + ')'),
+      e => D('  không chạy lại được: ' + ((e && e.name) || e)));
+  }
   function onMediaTime() {
     const now = Date.now();
     if (now - lastMediaTick < 80) return;
@@ -659,6 +675,9 @@
         seenVideos.add(v);
         v.addEventListener('seeking', () => { dubbedIdx = -1; stopDub(); });
         v.addEventListener('timeupdate', onMediaTime);
+        // Chẩn đoán: video bị dừng lúc tab đang ẩn = trình duyệt dừng (tiết kiệm pin), không phải người dùng.
+        v.addEventListener('pause', () => onVideoPause(v));
+        v.addEventListener('play', () => D('VIDEO CHẠY' + (document.hidden ? ' (tab đang ẩn)' : '')));
       }
     }
     applyMute(on);
@@ -796,7 +815,11 @@
     if (!ttsCache.has(k)) {
       ttsCache.set(k, send({ type: 'tts', text: speakable(c.tr), voice: rv }).then(r => {
         D('TẠO GIỌNG ' + rv + ': ' + (r.ok ? 'ok engine=' + r.engine + ' ' + (r.audio ? r.audio.length : 0) + ' ký tự base64' + (r.warn ? ' CẢNH BÁO=' + r.warn : '') : 'LỖI ' + r.error));
-        if (!r.ok) { lastError = 'Lỗi giọng đọc: ' + r.error; ttsCache.delete(k); return null; }
+        if (!r.ok) {
+          // "Failed to fetch" = Chrome chặn quyền gọi dịch vụ giọng đọc (mục Truy cập trang web bị hạn chế).
+          lastError = 'Lỗi giọng đọc: ' + r.error + (/failed to fetch/i.test(r.error || '') ? ' — Chrome đang chặn quyền: mở Cài đặt TransVid và bấm Lưu để cấp lại' : '');
+          ttsCache.delete(k); return null;
+        }
         if (r.warn) lastError = r.warn;
         const bin = atob(r.audio), bytes = new Uint8Array(bin.length);
         for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);

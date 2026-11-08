@@ -88,6 +88,11 @@ $('diag').onclick = async () => {
   lines.push('Thử dịch (background): ' + (t && t.ok ? t.reply : 'LỖI ' + (t ? t.error : 'không phản hồi')));
   const tts = await chrome.runtime.sendMessage({ type: 'tts', text: 'Xin chào', voice: BSUB_MS_VOICES[cfg.voice] ? cfg.voice : 'google' }).catch(e => ({ ok: false, error: e.message }));
   lines.push('Thử tạo giọng: ' + (tts && tts.ok ? 'ok engine=' + tts.engine + ' ' + tts.audio.length + ' ký tự' + (tts.warn ? ' CẢNH BÁO=' + tts.warn : '') : 'LỖI ' + (tts ? tts.error : 'không phản hồi')));
+  const pr = await chrome.runtime.sendMessage({ type: 'probeTts' }).catch(e => ({ ok: false, error: e.message }));
+  lines.push('Dò giọng Google: ' + (pr && pr.ok ? 'có cookie=' + pr.withCookies + ', không cookie=' + pr.noCookies : 'LỖI ' + (pr ? pr.error : 'không phản hồi')));
+  const perms = [];
+  for (const o of bsubNeededOrigins(cfg)) perms.push(o.replace(/^https:\/\/|\/\*$/g, '') + '=' + ((await chrome.permissions.contains({ origins: [o] }).catch(() => false)) ? 'có' : 'BỊ CHẶN'));
+  lines.push('Quyền: ' + perms.join(', ') + (perms.some(p => p.endsWith('BỊ CHẶN')) ? '  -> chrome://extensions > TransVid > Chi tiết > Truy cập trang web, hoặc bấm Lưu trong Cài đặt' : ''));
   const { r, why } = await toTab({ type: 'diag' });
   if (!r) lines.push('Tab: KHÔNG liên lạc được (' + (why || 'không phản hồi') + ')');
   else {

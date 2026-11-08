@@ -10,6 +10,19 @@
   };
   // Chẩn đoán: báo cho content.js biết hook đã chạy và đã bắt được gì.
   const note = msg => window.postMessage({ __bsub: 'hooklog', msg }, location.origin);
+
+  // Chẩn đoán: video bị dừng lúc tab ẩn là do mã của trang (YouTube) gọi pause() hay do trình duyệt.
+  // Chỉ ghi nhật ký, không đổi hành vi.
+  if (typeof HTMLMediaElement !== 'undefined') {
+    const origPause = HTMLMediaElement.prototype.pause;
+    HTMLMediaElement.prototype.pause = function () {
+      if (document.hidden) {
+        const where = String(new Error().stack || '').split(/\n/).slice(2, 4).join(' | ').replace(/\s+/g, ' ').slice(0, 160);
+        note('trang gọi pause() lúc tab ẩn: ' + where);
+      }
+      return origPause.apply(this, arguments);
+    };
+  }
   note('hook.js đã chạy (MAIN world)');
 
   const origFetch = window.fetch;
