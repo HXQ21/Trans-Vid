@@ -4,3 +4,6 @@
 *.zip
 .env
 node_modules/
+
+# Ghi chú riêng cho Claude Code: chỉ để trên máy
+CLAUDE.md

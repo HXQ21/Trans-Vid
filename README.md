@@ -68,7 +68,6 @@ tools/sync_ps1.py      đồng bộ script tạo extension (.ps1)
 node tests/test_extension.js
 ```
 
-Ghi chú chi tiết cho người phát triển (và Claude Code): [`CLAUDE.md`](CLAUDE.md).
 
 ## Quyền riêng tư
 

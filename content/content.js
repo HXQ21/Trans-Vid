@@ -428,6 +428,16 @@
     setTimeout(loop, delay);
   }
 
+  // Tab bị ẩn (chuyển sang tab khác): Chrome hãm setTimeout (1 lần/giây, im lặng lâu thì 1 lần/phút),
+  // nên canh giờ thêm theo sự kiện timeupdate của chính video (vẫn chạy ~4 lần/giây khi video phát).
+  let lastMediaTick = 0;
+  function onMediaTime() {
+    const now = Date.now();
+    if (now - lastMediaTick < 80) return;
+    lastMediaTick = now;
+    try { tick(); } catch (e) { console.warn('[TransVid]', e); }
+  }
+
   function pickVideo() {
     if (IS_YT) return document.querySelector('#movie_player video, .html5-video-player video');
     let best = null, area = 0;
@@ -648,6 +658,7 @@
       if (v && !seenVideos.has(v)) {
         seenVideos.add(v);
         v.addEventListener('seeking', () => { dubbedIdx = -1; stopDub(); });
+        v.addEventListener('timeupdate', onMediaTime);
       }
     }
     applyMute(on);

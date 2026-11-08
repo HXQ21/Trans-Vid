@@ -14,7 +14,7 @@ function loadShared() {
 }
 
 // Trang YouTube giả: video, nút CC, chrome.* giả; chạy shared.js + content.js thật.
-function fakePage({ pageV = 'MAIN', ccPressed = 'false', voice = 'auto', geminiKey = '', cache = null, viaFn = () => 'google', site = 'youtube', tracks = [], files = {}, autoDub = true, store = {} } = {}) {
+function fakePage({ pageV = 'MAIN', ccPressed = 'false', voice = 'auto', geminiKey = '', cache = null, viaFn = () => 'google', site = 'youtube', tracks = [], files = {}, autoDub = true, store = {}, hiddenTab = false } = {}) {
   let msgListener = null; const winL = {}; const changeL = [];
   const trackEls = tracks.map(t => ({ srclang: t.lang, label: t.label, getAttribute: k => (k === 'src' ? t.src : null) }));
   // Phần tử DOM giả tối thiểu (cho nút bật lồng tiếng trên video).
@@ -41,7 +41,8 @@ function fakePage({ pageV = 'MAIN', ccPressed = 'false', voice = 'auto', geminiK
   const ccBtn = { clicks: 0, attrs: { 'aria-pressed': ccPressed }, getAttribute(k) { return this.attrs[k]; }, click() { this.clicks++; this.attrs['aria-pressed'] = this.attrs['aria-pressed'] === 'true' ? 'false' : 'true'; } };
   const sent = [];
   const ctx = {
-    console, setTimeout, clearTimeout, URL, URLSearchParams, JSON, Math, Promise, Error, String, Number, isFinite, Map, WeakSet, Object, Array, atob, btoa, Uint8Array,
+    // hiddenTab: mô phỏng tab ẩn bị Chrome hãm — hẹn giờ ≥ 50ms không bao giờ chạy (chỉ còn sự kiện của video).
+    console, setTimeout: hiddenTab ? (f, ms, ...a) => (ms >= 50 ? 0 : setTimeout(f, ms, ...a)) : setTimeout, clearTimeout, URL, URLSearchParams, JSON, Math, Promise, Error, String, Number, isFinite, Map, WeakSet, Object, Array, atob, btoa, Uint8Array,
     Blob: class {}, performance: { getEntriesByType: () => [] },
     location: { ...loc, origin: 'https://' + HOST, hostname: HOST },
     fetch: async url => { fetched.push(url); return { ok: url in files, status: url in files ? 200 : 404, text: async () => files[url] || '' }; },
@@ -731,6 +732,21 @@ function fakePage({ pageV = 'MAIN', ccPressed = 'false', voice = 'auto', geminiK
     await sleep(400);
     check('âm lượng video giữ nguyên khi đọc', P.video.volume === 1, P.video.volume);
     check('bỏ cài đặt duck', !/\bduck\b/.test(fs.readFileSync(path.join(DIR, 'lib/shared.js'), 'utf8')));
+  }
+
+  console.log('35. Chuyển sang tab khác (Chrome hãm hẹn giờ): vẫn đọc tiếp nhờ sự kiện timeupdate của video');
+  {
+    const P = fakePage({ ccPressed: 'true', hiddenTab: true });
+    await sleep(20);
+    P.postCaptions('MAIN', ['This is the first line here.', 'This is the second line here.']);
+    await sleep(300);
+    const said = () => P.sent.filter(m => m.type === 'tts').map(m => m.text || '');
+    P.video.currentTime = 0.2; P.video.fire('timeupdate');
+    await sleep(300);
+    check('tab ẩn: video chạy tới câu đầu -> vẫn đọc', said().some(t => /first/.test(t)), said());
+    P.video.currentTime = 3.2; P.video.fire('timeupdate');
+    await sleep(300);
+    check('tab ẩn: tới câu thứ hai -> đọc tiếp', said().some(t => /second/.test(t)), said());
   }
 
   console.log('\n' + pass + ' đạt, ' + fail + ' lỗi');
