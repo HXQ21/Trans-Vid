@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="vi">
+<head><meta charset="utf-8"><link rel="stylesheet" href="ui.css"></head>
+<body class="popup">
+  <h1>Lồng tiếng Việt <small id="ver" class="muted"></small></h1>
+  <label class="row"><span>Bật lồng tiếng</span><input type="checkbox" id="enabled"></label>
+  <label>Giọng đọc
+    <span class="voicerow"><select id="voice"></select><button id="preview" title="Nghe thử">▶</button></span></label>
+  <p id="voiceInfo" class="muted"></p>
+  <p id="previewMsg" class="muted" hidden></p>
+  <label class="vol"><span>🔊 Âm lượng giọng đọc <b id="voiceVolumeVal"></b></span>
+    <input type="range" id="voiceVolume" min="0" max="100" step="5"></label>
+  <label class="vol"><span>🎬 Video khi đang đọc <b id="duckVal"></b></span>
+    <input type="range" id="duck" min="0" max="100" step="5"></label>
+  <p id="progress" class="muted"></p>
+  <p id="engine" class="muted"></p>
+  <p id="err" class="warn" hidden></p>
+  <div class="btns"><button id="retranslate">Dịch lại</button><button id="options">Cài đặt</button><button id="diag">Chẩn đoán</button></div>
+  <textarea id="diagOut" readonly hidden></textarea>
+  <script src="shared.js"></script>
+  <script src="voices.js"></script>
+  <script src="popup.js"></script>
+</body>
+</html>

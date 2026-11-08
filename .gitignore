@@ -1,0 +1,6 @@
+# Không đưa lên git: file tạm, key, gói đã đóng
+*.crx
+*.pem
+*.zip
+.env
+node_modules/

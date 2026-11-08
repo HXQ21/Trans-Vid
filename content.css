@@ -1,0 +1,2 @@
+/* Đang lồng tiếng: ẩn phụ đề YouTube, phụ đề chỉ dùng làm nguồn để dịch. */
+html.bsub-hide-native .ytp-caption-window-container { display: none !important; }
