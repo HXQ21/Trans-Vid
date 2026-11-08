@@ -1,5 +1,5 @@
 const $ = id => document.getElementById(id);
-const FIELDS = ['geminiKey', 'geminiModel', 'voice', 'azureKey', 'azureRegion'];
+const FIELDS = ['geminiKey', 'apiKey', 'voice', 'azureKey', 'azureRegion'];
 const hasAzure = () => !!$('azureKey').value.trim();
 
 bsubGet().then(cfg => {
@@ -28,9 +28,28 @@ async function save() {
     const el = $(k);
     o[k] = el.type === 'number' ? Number(el.value) : el.value.trim();
   }
-  o.geminiModel = o.geminiModel || BSUB_DEFAULTS.geminiModel;
+  // Model Gemini chọn tự động (tự chuyển khi hết lượt): luôn bắt đầu từ bản flash mới nhất.
+  o.geminiModel = BSUB_DEFAULTS.geminiModel;
   o.azureRegion = (o.azureRegion || BSUB_DEFAULTS.azureRegion).toLowerCase().replace(/[^a-z0-9]/g, '');
+  // Địa chỉ + model Vilao cố định (không hiện trong Cài đặt).
+  o.apiBase = BSUB_DEFAULTS.apiBase;
+  o.apiModel = BSUB_DEFAULTS.apiModel;
   await chrome.storage.local.set(o);
+  return o.apiKey ? grantApi(o.apiBase) : '';
+}
+
+// Key thuê: extension cần quyền gọi tới địa chỉ API đó (Chrome hỏi một lần). Trả về lời nhắc nếu chưa có quyền.
+async function grantApi(base) {
+  if (!base) return '';
+  let origin;
+  try { origin = new URL(base).origin + '/*'; } catch (e) { return 'Địa chỉ API không hợp lệ.'; }
+  if (!/^https:/.test(origin)) return 'Địa chỉ API phải bắt đầu bằng https://';
+  try {
+    if (await chrome.permissions.contains({ origins: [origin] })) return '';
+    return (await chrome.permissions.request({ origins: [origin] })) ? '' : 'Chưa cấp quyền gọi ' + origin + ': key thuê sẽ không chạy.';
+  } catch (e) {
+    return 'Bấm nút Lưu để cấp quyền gọi ' + origin + '.';
+  }
 }
 
 function note(text, bad) {
@@ -38,13 +57,14 @@ function note(text, bad) {
   $('msg').className = bad ? 'warn' : 'ok';
 }
 
-$('save').onclick = async () => { await save(); note('Đã lưu.'); };
+$('save').onclick = async () => { const w = await save(); note(w || 'Đã lưu.', !!w); };
 
 $('test').onclick = async () => {
-  await save();
+  const w = await save();
+  if (w) return note(w, true);
   note('Đang thử dịch…');
   const r = await chrome.runtime.sendMessage({ type: 'test' });
-  if (r && r.ok) { note(r.reply); if (r.model) $('geminiModel').value = r.model; }
+  if (r && r.ok) note(r.reply);
   else note('Lỗi: ' + (r ? r.error : 'không phản hồi'), true);
 };
 
@@ -56,5 +76,5 @@ $('clear').onclick = async () => {
 };
 // Tự lưu ngay khi đổi một ô (dán key xong đóng trang vẫn không mất).
 for (const k of FIELDS) {
-  $(k).addEventListener('change', async () => { await save(); note('Đã tự lưu.'); });
+  $(k).addEventListener('change', async () => { const w = await save(); note(w || 'Đã tự lưu.', !!w); });
 }

@@ -1,4 +1,4 @@
-importScripts('shared.js');
+importScripts('lib/shared.js');
 
 chrome.runtime.onInstalled.addListener(d => {
   if (d.reason === 'install') chrome.runtime.openOptionsPage();
@@ -46,6 +46,8 @@ async function request(url, init, tries = 3, timeoutMs = 0) {
 // ---- Dịch bằng Gemini (cần API key miễn phí từ aistudio.google.com) ----
 
 // Gemini chậm quá thì bỏ, dùng Google (lô đang xem không được phép chờ lâu).
+// Key thuê (qua máy chủ trung gian) thường chậm hơn (vd Vilao ~12s): cho chờ lâu hơn.
+const rentedTimeout = () => globalThis.__bsubRentedTimeoutMs || 45000;
 const geminiTimeout = () => globalThis.__bsubGeminiTimeoutMs || 15000;
 
 // Bị 429 (hết quota) / key sai: tạm ngừng gọi Gemini một lúc, dịch thẳng bằng Google
@@ -56,7 +58,7 @@ function pauseGemini(e) {
   const min = st === 429 ? 10 : (st === 400 || st === 401 || st === 403) ? 30 : 0;
   if (!min) return;
   geminiPausedUntil = Date.now() + min * 60000;
-  geminiPauseReason = st === 429 ? 'key Gemini hết quota (429)' : 'key Gemini bị từ chối (' + st + ')';
+  geminiPauseReason = st === 429 ? 'hết lượt (429)' : 'bị từ chối (' + st + ')';
 }
 
 // ---- Chọn model Gemini ----
@@ -132,6 +134,25 @@ async function geminiChat(cfg, system, user) {
   throw lastErr;
 }
 
+// ---- Key thuê: API tương thích OpenAI (vd Vilao). Chỉ 1 model, không tự chuyển model. ----
+async function rentedChat(cfg, system, user) {
+  const url = String(cfg.apiBase).trim().replace(/\/+$/, '') + '/chat/completions';
+  const model = String(cfg.apiModel).trim();
+  const res = await request(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + String(cfg.apiKey).trim() },
+    body: JSON.stringify({ model, messages: [{ role: 'system', content: system }, { role: 'user', content: user }] })
+  }, 2, rentedTimeout());
+  lastGeminiModel = model;
+  const data = await res.json();
+  const m = data.choices && data.choices[0] && data.choices[0].message;
+  return (m && m.content) || '';
+}
+
+// Gọi AI theo nguồn đang chọn: key thuê (nếu đủ) trước, không thì Gemini của Google.
+const aiChat = (cfg, system, user) => (bsubUseRented(cfg) ? rentedChat : geminiChat)(cfg, system, user);
+const aiName = cfg => (bsubUseRented(cfg) ? 'Key thuê (' + String(cfg.apiModel).trim() + ')' : 'Gemini');
+
 function parseObject(text) {
   text = String(text || '').replace(/<think>[\s\S]*?<\/think>/g, '');
   const s = text.indexOf('{');
@@ -157,7 +178,7 @@ async function geminiTranslate(cfg, lines, srcName, ctx = {}) {
   const lineObj = {};
   lines.forEach((l, i) => { lineObj[i + 1] = l; });
   const input = { video_title: ctx.title || '', earlier_lines_for_context_only: (ctx.before || []).slice(-8), lines: lineObj };
-  const out = parseObject(await geminiChat(cfg, system, JSON.stringify(input)));
+  const out = parseObject(await aiChat(cfg, system, JSON.stringify(input)));
   const obj = out.lines && typeof out.lines === 'object' ? out.lines : out;
   return lines.map((_, i) => (typeof obj[i + 1] === 'string' ? obj[i + 1].trim() : ''));
 }
@@ -214,12 +235,12 @@ const srcName = code => { if (SRC_EN[code]) return SRC_EN[code]; try { return ne
 
 async function translateLines(cfg, lines, src, ctx = {}) {
   const beforeSrc = (ctx.before || []).map(b => b.src);
-  if (cfg.geminiKey && Date.now() < geminiPausedUntil) {
+  if (bsubAiOn(cfg) && Date.now() < geminiPausedUntil) {
     const mins = Math.ceil((geminiPausedUntil - Date.now()) / 60000);
     return { translations: await googleTranslate(lines, src || 'auto', beforeSrc), via: 'google',
-      warn: 'Đang dùng Google Dịch: ' + geminiPauseReason + ', thử lại Gemini sau ' + mins + ' phút' };
+      warn: 'Đang dùng Google Dịch: ' + aiName(cfg) + ' ' + geminiPauseReason + ', thử lại sau ' + mins + ' phút' };
   }
-  if (cfg.geminiKey) {
+  if (bsubAiOn(cfg)) {
     try {
       const translations = await geminiTranslate(cfg, lines, srcName(src), ctx);
       return { translations, via: 'gemini', model: lastGeminiModel };
@@ -227,7 +248,7 @@ async function translateLines(cfg, lines, src, ctx = {}) {
       // Hết lượt miễn phí / key sai / quá giờ / mạng lỗi: chuyển sang Google Dịch.
       pauseGemini(e);
       const translations = await googleTranslate(lines, src || 'auto', beforeSrc);
-      return { translations, via: 'google', warn: 'Gemini lỗi, đang dùng Google Dịch: ' + String(e.message || e).replace(/\s+/g, ' ').slice(0, 160) };
+      return { translations, via: 'google', warn: aiName(cfg) + ' lỗi, đang dùng Google Dịch: ' + String(e.message || e).replace(/\s+/g, ' ').slice(0, 160) };
     }
   }
   return { translations: await googleTranslate(lines, src || 'auto', beforeSrc), via: 'google' };
@@ -304,11 +325,12 @@ async function onTts({ text, voice }) {
 
 async function onTest() {
   const cfg = await bsubGet();
-  if (!cfg.geminiKey) {
+  if (!bsubAiOn(cfg)) {
     const [t] = await googleTranslate(['Hello, how are you?'], 'en');
     return { reply: 'Chưa có key Gemini — Google Dịch hoạt động: "' + t + '"' };
   }
   const [t] = await geminiTranslate(cfg, ['Hello, how are you?'], 'English');
+  if (bsubUseRented(cfg)) return { reply: aiName(cfg) + ' hoạt động: "' + t + '"' };
   const changed = lastGeminiModel !== cfg.geminiModel ? ' (' + cfg.geminiModel + ' đang hết lượt hoặc không dùng được, tự chuyển)' : '';
   return { reply: 'Gemini ' + lastGeminiModel + changed + ' hoạt động: "' + t + '"' };
 }

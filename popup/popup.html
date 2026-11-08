@@ -3,14 +3,14 @@
 <head>
   <meta charset="utf-8">
   <meta name="color-scheme" content="light dark">
-  <link rel="stylesheet" href="pico.min.css">
-  <link rel="stylesheet" href="ui.css">
+  <link rel="stylesheet" href="../styles/pico.min.css">
+  <link rel="stylesheet" href="../styles/ui.css">
 </head>
 <body class="popup">
   <header class="top">
     <div class="brand">
-      <span class="logo">VI</span>
-      <div><strong>Lồng tiếng Việt</strong><small id="ver"></small></div>
+      <img class="logo" src="../icons/icon48.png" alt="">
+      <div><strong>TransVid</strong><small id="ver"></small></div>
     </div>
     <input type="checkbox" role="switch" id="enabled" aria-label="Bật lồng tiếng" title="Bật / tắt toàn bộ extension">
   </header>
@@ -39,8 +39,8 @@
   </div>
   <textarea id="diagOut" readonly hidden></textarea>
 
-  <script src="shared.js"></script>
-  <script src="voices.js"></script>
+  <script src="../lib/shared.js"></script>
+  <script src="../lib/voices.js"></script>
   <script src="popup.js"></script>
 </body>
 </html>

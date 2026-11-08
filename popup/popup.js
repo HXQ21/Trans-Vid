@@ -26,9 +26,11 @@ bsubGet().then(cfg => {
     m.textContent = err;
     m.hidden = !err;
   };
-  $('engine').textContent = cfg.geminiKey
-    ? 'Dịch bằng Gemini (' + cfg.geminiModel + ')'
-    : 'Dịch bằng Google Dịch (chưa có key Gemini)';
+  $('engine').textContent = bsubUseRented(cfg)
+    ? 'Dịch bằng Vilao (' + cfg.apiModel + ')'
+    : cfg.geminiKey
+      ? 'Dịch bằng Gemini (tự chọn model còn lượt)'
+      : 'Dịch bằng Google Dịch (chưa có key Gemini)';
 });
 
 $('options').onclick = () => chrome.runtime.openOptionsPage();
@@ -79,8 +81,8 @@ $('diag').onclick = async () => {
   const cfg = await bsubGet();
   const lines = [];
   lines.push('Extension v' + chrome.runtime.getManifest().version + ' | ' + navigator.userAgent.match(/(Edg|Chrome)\/[\d.]+/g).join(' '));
-  lines.push('Cấu hình: bật=' + cfg.enabled + ' giọng=' + cfg.voice + ' volGiọng=' + cfg.voiceVolume + ' volVideo=' + cfg.duck
-    + ' | geminiKey=' + mask(cfg.geminiKey) + ' model=' + cfg.geminiModel + ' | azureKey=' + mask(cfg.azureKey) + ' region=' + cfg.azureRegion);
+  lines.push('Cấu hình: bật=' + cfg.enabled + ' giọng=' + cfg.voice + ' volGiọng=' + cfg.voiceVolume
+    + ' | geminiKey=' + mask(cfg.geminiKey) + ' model=' + cfg.geminiModel + ' | keyThuê=' + mask(cfg.apiKey) + ' ' + (cfg.apiBase || '-') + ' ' + (cfg.apiModel || '-') + ' | azureKey=' + mask(cfg.azureKey) + ' region=' + cfg.azureRegion);
   lines.push('Giọng tiếng Việt trong popup: ' + (bsubVietVoices().map(v => v.name).join(', ') || 'KHÔNG CÓ'));
   const t = await chrome.runtime.sendMessage({ type: 'test' }).catch(e => ({ ok: false, error: e.message }));
   lines.push('Thử dịch (background): ' + (t && t.ok ? t.reply : 'LỖI ' + (t ? t.error : 'không phản hồi')));

@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
-  "name": "My Dual Subtitles",
-  "version": "2.9.2",
+  "name": "TransVid",
+  "version": "3.2.0",
   "description": "Lồng tiếng Việt cho video YouTube, Udemy, Coursera: đọc thẳng phụ đề Việt nếu có, không thì dịch bằng Gemini (hoặc Google Dịch).",
   "permissions": [
     "storage",
@@ -16,14 +16,19 @@
     "https://translate.google.com/*",
     "https://*.tts.speech.microsoft.com/*"
   ],
+  "optional_host_permissions": [
+    "https://*/*"
+  ],
   "background": {
     "service_worker": "background.js"
   },
   "action": {
-    "default_popup": "popup.html",
-    "default_title": "Lồng tiếng Việt"
+    "default_popup": "popup/popup.html",
+    "default_title": "TransVid — lồng tiếng Việt",
+    "default_icon": { "16": "icons/icon16.png", "32": "icons/icon32.png", "48": "icons/icon48.png", "128": "icons/icon128.png" }
   },
-  "options_page": "options.html",
+  "icons": { "16": "icons/icon16.png", "32": "icons/icon32.png", "48": "icons/icon48.png", "128": "icons/icon128.png" },
+  "options_page": "options/options.html",
   "content_scripts": [
     {
       "matches": [
@@ -31,7 +36,7 @@
         "*://*.udemy.com/*"
       ],
       "js": [
-        "hook.js"
+        "content/hook.js"
       ],
       "run_at": "document_start",
       "world": "MAIN"
@@ -43,11 +48,11 @@
         "*://*.coursera.org/*"
       ],
       "js": [
-        "shared.js",
-        "content.js"
+        "lib/shared.js",
+        "content/content.js"
       ],
       "css": [
-        "content.css"
+        "content/content.css"
       ],
       "run_at": "document_start"
     }

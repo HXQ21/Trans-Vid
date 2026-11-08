@@ -16,7 +16,7 @@ html.bsub-hide-native .ytp-caption-window-container { display: none !important; 
 }
 .bsub-host:hover > .bsub-btn, .bsub-host > .bsub-btn:focus-visible { opacity: 1; }
 .bsub-host > .bsub-btn:hover { background: rgba(60, 60, 60, 0.95); }
-.bsub-host > .bsub-btn.bsub-on { background: rgba(204, 0, 0, 0.9); }
-.bsub-host > .bsub-btn.bsub-on:hover { background: rgba(230, 20, 20, 0.95); }
+.bsub-host > .bsub-btn.bsub-on { background: linear-gradient(135deg, rgba(37, 75, 255, 0.95), rgba(124, 31, 232, 0.95)); }
+.bsub-host > .bsub-btn.bsub-on:hover { background: linear-gradient(135deg, #3d63ff, #8f3cf0); }
 /* YouTube ẩn thanh điều khiển khi chuột đứng yên: ẩn nút theo. */
 .html5-video-player.ytp-autohide > .bsub-btn:not(:hover) { opacity: 0; }

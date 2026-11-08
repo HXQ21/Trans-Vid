@@ -3,16 +3,16 @@
 <head>
   <meta charset="utf-8">
   <meta name="color-scheme" content="light dark">
-  <title>Cài đặt — Lồng tiếng Việt</title>
-  <link rel="stylesheet" href="pico.min.css">
-  <link rel="stylesheet" href="ui.css">
+  <title>Cài đặt — TransVid</title>
+  <link rel="stylesheet" href="../styles/pico.min.css">
+  <link rel="stylesheet" href="../styles/ui.css">
 </head>
 <body class="options">
   <main class="container">
     <header class="top">
       <div class="brand">
-        <span class="logo">VI</span>
-        <div><strong>Cài đặt lồng tiếng Việt</strong>
+        <img class="logo" src="../icons/icon128.png" alt="">
+        <div><strong>Cài đặt TransVid</strong>
           <small>Dịch phụ đề video YouTube, Udemy, Coursera sang tiếng Việt rồi đọc lên.</small></div>
       </div>
     </header>
@@ -30,8 +30,15 @@
       <p class="muted">Có key Gemini thì dịch bằng Gemini (hay hơn); không có key hoặc Gemini lỗi thì tự dùng Google Dịch.</p>
       <label for="geminiKey">Gemini API key <small class="muted">miễn phí, lấy ở aistudio.google.com/apikey — bỏ trống = dùng Google Dịch</small></label>
       <input id="geminiKey" type="password" autocomplete="off">
-      <label for="geminiModel">Model Gemini <small class="muted">model cũ bị Google ngừng thì tự đổi sang bản mới nhất</small></label>
-      <input id="geminiModel" placeholder="gemini-flash-latest">
+      <p class="muted">Model Gemini được chọn tự động: model nào hết lượt hoặc quá tải thì tự chuyển sang model flash khác còn lượt.</p>
+    </article>
+
+    <article>
+      <header><strong>Key Vilao</strong> <small class="muted">tuỳ chọn</small></header>
+      <p class="muted">Dán key Vilao thì dịch bằng Vilao (ưu tiên hơn key Gemini). Lỗi hoặc hết tiền thì tự dùng Google Dịch.
+        Phụ đề video sẽ được gửi tới máy chủ Vilao.</p>
+      <label for="apiKey">Key Vilao</label>
+      <input id="apiKey" type="password" autocomplete="off" placeholder="sk-…">
     </article>
 
     <article>
@@ -61,10 +68,10 @@
       <button id="clear" class="secondary outline">Xoá cache bản dịch</button>
     </div>
     <p id="msg"></p>
-    <p class="muted">Key chỉ lưu trên máy này (chrome.storage.local) và chỉ gửi tới Google Gemini / Azure.</p>
+    <p class="muted">Key chỉ lưu trên máy này (chrome.storage.local) và chỉ gửi tới đúng dịch vụ của nó (Google Gemini / nhà cung cấp key thuê / Azure).</p>
   </main>
-  <script src="shared.js"></script>
-  <script src="voices.js"></script>
+  <script src="../lib/shared.js"></script>
+  <script src="../lib/voices.js"></script>
   <script src="options.js"></script>
 </body>
 </html>

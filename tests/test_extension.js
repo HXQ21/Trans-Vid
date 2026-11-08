@@ -1,7 +1,7 @@
-// Bộ test cho extension my-dual-subtitles. Chạy: node tools/test_extension.js
+// Bộ test cho extension TransVid. Chạy: node tests/test_extension.js
 // Chạy mã thật của extension trong môi trường giả (vm), không cần Chrome.
 const fs = require('fs'), vm = require('vm'), path = require('path');
-const DIR = process.argv[2] || path.join(__dirname, '..');   // thư mục extension (cha của tools/)
+const DIR = process.argv[2] || path.join(__dirname, '..');   // thư mục extension (cha của tests/)
 let pass = 0, fail = 0;
 const check = (name, ok, got) => { if (ok) { pass++; console.log('  ok   ' + name); } else { fail++; console.log('  FAIL ' + name + (got !== undefined ? '  -> ' + JSON.stringify(got) : '')); } };
 const sleep = ms => new Promise(r => setTimeout(r, ms));
@@ -9,7 +9,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
 function loadShared() {
   const ctx = { console, chrome: { storage: { local: { get() {} } } } };
   vm.createContext(ctx);
-  vm.runInContext(fs.readFileSync(path.join(DIR, 'shared.js'), 'utf8') + '\n;this.S = {}; for (const n of ["bsubCleanSource", "bsubSpeakable", "bsubSourceLang", "bsubIsVi", "bsubIsAutoLabel", "bsubPickCaption", "bsubParseVtt", "bsubLangName", "bsubSegmentSentences"]) { try { this.S[n] = eval(n); } catch (e) { this.S[n] = null; } }', ctx);
+  vm.runInContext(fs.readFileSync(path.join(DIR, 'lib/shared.js'), 'utf8') + '\n;this.S = {}; for (const n of ["bsubCleanSource", "bsubSpeakable", "bsubSourceLang", "bsubIsVi", "bsubIsAutoLabel", "bsubPickCaption", "bsubParseVtt", "bsubLangName", "bsubSegmentSentences", "bsubAiOn", "bsubAiId"]) { try { this.S[n] = eval(n); } catch (e) { this.S[n] = null; } }', ctx);
   return ctx.S;
 }
 
@@ -59,7 +59,7 @@ function fakePage({ pageV = 'MAIN', ccPressed = 'false', voice = 'auto', geminiK
   ctx.URL.createObjectURL = () => 'blob:x';
   ctx.window = ctx; ctx.addEventListener = (t, f) => { (winL[t] = winL[t] || []).push(f); };   // trình duyệt gọi MỌI bộ nghe
   vm.createContext(ctx);
-  for (const f of ['shared.js', 'content.js']) vm.runInContext(fs.readFileSync(path.join(DIR, f), 'utf8'), ctx);
+  for (const f of ['lib/shared.js', 'content/content.js']) vm.runInContext(fs.readFileSync(path.join(DIR, f), 'utf8'), ctx);
   const win = vm.runInContext('window', ctx);
   const posted = [];
   const realPost = win.postMessage;
@@ -132,7 +132,7 @@ function fakePage({ pageV = 'MAIN', ccPressed = 'false', voice = 'auto', geminiK
       ctx.window.speechSynthesis = { getVoices: () => voices, addEventListener() {} };
       ctx.speechSynthesis = ctx.window.speechSynthesis;
       vm.createContext(ctx);
-      for (const f of ['shared.js', 'voices.js']) vm.runInContext(fs.readFileSync(path.join(DIR, f), 'utf8'), ctx);
+      for (const f of ['lib/shared.js', 'lib/voices.js']) vm.runInContext(fs.readFileSync(path.join(DIR, f), 'utf8'), ctx);
       return { ctx, select };
     };
     const chrome = mk([]);
@@ -425,7 +425,7 @@ function fakePage({ pageV = 'MAIN', ccPressed = 'false', voice = 'auto', geminiK
       ctx.postMessage = d => posted.push(d);
       ctx.addEventListener = (t, f) => { if (t === 'message') listeners.push(f); };
       vm.createContext(ctx);
-      vm.runInContext(fs.readFileSync(path.join(DIR, 'hook.js'), 'utf8'), ctx);
+      vm.runInContext(fs.readFileSync(path.join(DIR, 'content/hook.js'), 'utf8'), ctx);
       const win = vm.runInContext('window', ctx);
       return { ctx, posted, player, send: d => listeners.forEach(f => f({ source: win, data: d })) };
     };
@@ -491,7 +491,7 @@ function fakePage({ pageV = 'MAIN', ccPressed = 'false', voice = 'auto', geminiK
     const find = (() => { try { return vm.runInContext('bsubFindCaptionMenu', vm.createContext({})); } catch (e) { return null; } })();
     const ctx = { console, chrome: { storage: { local: { get() {} } } } };
     vm.createContext(ctx);
-    vm.runInContext(fs.readFileSync(path.join(DIR, 'shared.js'), 'utf8'), ctx);
+    vm.runInContext(fs.readFileSync(path.join(DIR, 'lib/shared.js'), 'utf8'), ctx);
     const fm = (() => { try { return vm.runInContext('bsubFindCaptionMenu', ctx); } catch (e) { return null; } })();
     const menus = [['0.5x', '0.75x', '1x', '1.25x', '1.5x', '2x'], ['Tắt', 'Tiếng Anh [Tự động]', 'Tiếng Việt [Tự động]', 'Tiếng Hy Lạp [Tự động]']];
     check('tìm đúng menu phụ đề (menu có "Tắt"/"Off")', fm && fm(menus) === 1, fm && fm(menus));
@@ -549,7 +549,7 @@ function fakePage({ pageV = 'MAIN', ccPressed = 'false', voice = 'auto', geminiK
       // Không có Intl.Segmenter (trình duyệt cũ): vẫn tách câu bằng dấu chấm.
       const ctx2 = { console };
       vm.createContext(ctx2);
-      vm.runInContext('Intl.Segmenter = undefined;' + fs.readFileSync(path.join(DIR, 'shared.js'), 'utf8'), ctx2);
+      vm.runInContext('Intl.Segmenter = undefined;' + fs.readFileSync(path.join(DIR, 'lib/shared.js'), 'utf8'), ctx2);
       const g = vm.runInContext('bsubSegmentSentences', ctx2)([
         { start: 0, end: 2, text: 'We start with the basics today. Then we' },
         { start: 2, end: 4, text: 'will learn Python loops.' },
@@ -658,6 +658,79 @@ function fakePage({ pageV = 'MAIN', ccPressed = 'false', voice = 'auto', geminiK
     E.fireChange({ enabled: { oldValue: true, newValue: false } });
     await sleep(700);
     check('tắt công tắc tổng -> bật lại tiếng gốc', E.video.muted === false);
+  }
+
+  console.log('32. Key thuê (API tương thích OpenAI, vd Vilao): gọi đúng địa chỉ, model, key; lỗi thì dùng Google');
+  {
+    const mk = (store, fetchMock) => {
+      const ctx = { console, fetch: fetchMock, setTimeout, clearTimeout, AbortController, btoa, atob, URL, encodeURIComponent, decodeURIComponent, Uint8Array, DataView, String, JSON, Math, Promise, Error, Object, Array, Date, parseFloat };
+      ctx.chrome = { runtime: { onInstalled: { addListener() {} }, onMessage: { addListener(f) { ctx.handler = f; } } },
+        storage: { local: { get(d, cb) { cb({ ...d, ...store }); }, set: () => Promise.resolve() } } };
+      ctx.importScripts = f => vm.runInContext(fs.readFileSync(path.join(DIR, f), 'utf8'), ctx);
+      vm.createContext(ctx);
+      vm.runInContext(fs.readFileSync(path.join(DIR, 'background.js'), 'utf8'), ctx);
+      return m => new Promise(r => ctx.handler(m, {}, r));
+    };
+    const resp = (status, body) => ({ ok: status < 300, status, json: async () => body, text: async () => JSON.stringify(body) });
+    const google = url => { const q = decodeURIComponent(url.split('&q=')[1] || ''); return resp(200, [[['GOOGLE ' + q]]]); };
+    const VILAO = { apiBase: 'https://api.vilao.ai/v1/', apiModel: 'chib/gemini-3.8-flash', apiKey: 'SK' };
+    const seen = [];
+    const call = mk(VILAO, async (url, init = {}) => {
+      seen.push({ url, auth: init.headers && init.headers.Authorization, body: init.body ? JSON.parse(init.body) : null });
+      if (url.includes('/chat/completions')) return resp(200, { choices: [{ message: { content: '{"lines":{"1":"Xin chào"}}' } }] });
+      return google(url);
+    });
+    const r = await call({ type: 'translate', lang: 'en', lines: ['Hello.'] });
+    const c = seen.find(s => s.url.includes('/chat/completions'));
+    check('gọi đúng địa chỉ (bỏ dấu / thừa)', c && c.url === 'https://api.vilao.ai/v1/chat/completions', c && c.url);
+    check('gửi đúng key', c && c.auth === 'Bearer SK', c && c.auth);
+    check('gửi đúng model', c && c.body.model === 'chib/gemini-3.8-flash', c && c.body.model);
+    check('không gọi Gemini của Google', !seen.some(s => s.url.includes('generativelanguage')));
+    check('dịch bằng AI, báo đúng model', r.ok && r.via === 'gemini' && r.model === 'chib/gemini-3.8-flash' && r.translations[0] === 'Xin chào', r);
+    // Có cả key thuê lẫn key Gemini: ưu tiên key thuê.
+    const seenB = [];
+    const callB = mk({ ...VILAO, geminiKey: 'AIzaX' }, async (url, init = {}) => { seenB.push(url); return url.includes('/chat/completions') ? resp(200, { choices: [{ message: { content: '{"lines":{"1":"A"}}' } }] }) : google(url); });
+    await callB({ type: 'translate', lang: 'en', lines: ['Hello.'] });
+    check('có cả hai key -> dùng key thuê', seenB.some(u => u.includes('vilao')) && !seenB.some(u => u.includes('generativelanguage')), seenB);
+    // Lỗi (hết tiền / key sai): dùng Google, có cảnh báo.
+    const call2 = mk(VILAO, async url => (url.includes('/chat/completions') ? resp(401, { error: { message: 'Invalid token' } }) : google(url)));
+    const r2 = await call2({ type: 'translate', lang: 'en', lines: ['Hello.'] });
+    check('nhà cung cấp lỗi -> Google Dịch + cảnh báo', r2.ok && r2.via === 'google' && /401/.test(r2.warn || ''), r2);
+    // Thiếu key thuê: không gọi Vilao, dùng Google.
+    const seen3 = [];
+    const call3 = mk({ ...VILAO, apiKey: '' }, async url => { seen3.push(url); return google(url); });
+    const r3 = await call3({ type: 'translate', lang: 'en', lines: ['Hello.'] });
+    check('chưa có key thuê -> Google, không gọi nhà cung cấp', r3.via === 'google' && !seen3.some(u => u.includes('vilao')), [r3.via, seen3]);
+    // Nút thử dịch trong Cài đặt dùng key thuê.
+    const call4 = mk(VILAO, async url => (url.includes('/chat/completions') ? resp(200, { choices: [{ message: { content: '{"lines":{"1":"Xin chào, bạn khoẻ không?"}}' } }] }) : google(url)));
+    const r4 = await call4({ type: 'test' });
+    check('nút thử dịch dùng key thuê', r4.ok && /chib\/gemini-3.8-flash/.test(r4.reply || ''), r4);
+    // shared.js
+    check('bsubAiOn: có key thuê = có AI', S.bsubAiOn && S.bsubAiOn({ ...VILAO, geminiKey: '' }) === true);
+    check('bsubAiOn: không key nào = không', S.bsubAiOn && S.bsubAiOn({ ...VILAO, apiKey: '', geminiKey: '' }) === false);
+    check('bsubAiId khác nhau theo nguồn dịch', S.bsubAiId && S.bsubAiId(VILAO) !== S.bsubAiId({ geminiKey: 'K', geminiModel: 'gemini-flash-latest' }) && S.bsubAiId({ geminiKey: '' }) === 'google');
+  }
+
+  console.log('33. Vilao: địa chỉ API + model cố định trong mã; key chỉ lấy từ Cài đặt');
+  {
+    const c = { console }; vm.createContext(c); vm.runInContext(fs.readFileSync(path.join(DIR, 'lib/shared.js'), 'utf8'), c);
+    check('mặc định địa chỉ API = Vilao', vm.runInContext('BSUB_DEFAULTS.apiBase', c) === 'https://api.vilao.ai/v1');
+    check('mặc định model = chib/gemini-3.8-flash', vm.runInContext('BSUB_DEFAULTS.apiModel', c) === 'chib/gemini-3.8-flash');
+    check('mặc định không có key', vm.runInContext('BSUB_DEFAULTS.apiKey', c) === '');
+    check('background không nạp key từ file', !/local\.js|BSUB_LOCAL/.test(fs.readFileSync(path.join(DIR, 'background.js'), 'utf8')));
+    check('Cài đặt không còn ô địa chỉ / model', !/id="apiBase"|id="apiModel"/.test(fs.readFileSync(path.join(DIR, 'options/options.html'), 'utf8')));
+  }
+
+  console.log('34. Đang đọc: không đổi âm lượng video (tiếng gốc đã tắt hẳn, không cần giảm âm lượng)');
+  {
+    const P = fakePage({ ccPressed: 'true' });
+    await sleep(20);
+    P.postCaptions('MAIN', ['This is the first line here.', 'This is the second line here.']);
+    await sleep(400);
+    P.video.currentTime = 0.1;
+    await sleep(400);
+    check('âm lượng video giữ nguyên khi đọc', P.video.volume === 1, P.video.volume);
+    check('bỏ cài đặt duck', !/\bduck\b/.test(fs.readFileSync(path.join(DIR, 'lib/shared.js'), 'utf8')));
   }
 
   console.log('\n' + pass + ' đạt, ' + fail + ' lỗi');

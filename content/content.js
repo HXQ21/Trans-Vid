@@ -34,7 +34,7 @@
   let lastError = '', via = '';
   let gen = 0;              // tăng mỗi khi các yêu cầu dịch đang chạy trở nên lỗi thời
   let video = null;
-  let dubbedIdx = -1, dubActive = false, dubToken = 0, duckedFrom = null, duckSet = null, audio = null;
+  let dubbedIdx = -1, dubActive = false, dubToken = 0, audio = null;
   let pendingIdx = -1;      // câu chờ đọc khi câu trước chưa đọc xong
   let saveTimer = 0, retryTimer = 0, upgradeTimer = 0, upgradeWait = 0;
   const seenVideos = new WeakSet();
@@ -51,12 +51,11 @@
       // nếu không sẽ xoá hết bản dịch và dịch lại từ đầu (tốn lượt Gemini).
       if (JSON.stringify(ch[k].oldValue) === JSON.stringify(ch[k].newValue)) continue;
       cfg[k] = ch[k].newValue;
-      if (k === 'geminiModel') clear = true;
-      if (k === 'geminiKey' || k === 'enabled') resume = true;
+      if (k === 'geminiModel' || k === 'apiBase' || k === 'apiModel') clear = true;
+      if (k === 'geminiKey' || k === 'apiKey' || k === 'enabled') resume = true;
     }
     // Kéo thanh âm lượng trong popup: áp dụng ngay cho câu đang đọc.
     if ('voiceVolume' in ch && audio) audio.volume = voiceVol();
-    if ('duck' in ch && duckedFrom != null && video) { video.volume = duckedFrom * Number(cfg.duck); duckSet = video.volume; }
     if (!cfg.enabled) stopDub();
     if (!cues.length) return;
     if (clear) {
@@ -348,13 +347,13 @@
   // Gemini vẫn chưa được thì chờ lâu dần (1, 2, 4… tối đa 10 phút) rồi thử lại.
   function scheduleUpgrade(my) {
     clearTimeout(upgradeTimer);
-    if (!cfg.geminiKey || !cues.some(c => c.tr && c.via === 'google')) return;
+    if (!bsubAiOn(cfg) || !cues.some(c => c.tr && c.via === 'google')) return;
     const base = window.__bsubUpgradeDelayMs != null ? window.__bsubUpgradeDelayMs : 60000;
     upgradeTimer = setTimeout(() => upgradeGoogle(my), Math.min(base * 2 ** upgradeWait, 600000));
   }
 
   async function upgradeGoogle(my) {
-    if (my !== gen || !cfg.enabled || !cfg.geminiKey || !isOn()) return;
+    if (my !== gen || !cfg.enabled || !bsubAiOn(cfg) || !isOn()) return;
     const n = cues.length, from = Math.max(0, findIdx(video ? video.currentTime : 0));
     const idx = [];
     for (let k = 0; k < n && idx.length < 20; k++) {
@@ -397,7 +396,7 @@
     return (h >>> 0).toString(36) + '_' + s.length;
   }
   // 'v4': cache ghi kèm engine đã dịch mỗi câu (bản v3 trộn lẫn câu Google dự phòng vào cache Gemini).
-  const cacheId = () => 'cache:' + hash('v5|' + cueKey + '|vi|' + (cfg.geminiKey ? cfg.geminiModel : 'google'));
+  const cacheId = () => 'cache:' + hash('v5|' + cueKey + '|vi|' + bsubAiId(cfg));
 
   async function loadCache() {
     if (!cueKey) return;
@@ -410,7 +409,7 @@
     let used = 0;
     arr.forEach((e, i) => {
       if (!e || typeof e !== 'object' || !e.t) return;
-      if (cfg.geminiKey && e.via !== 'gemini') return;
+      if (bsubAiOn(cfg) && e.via !== 'gemini') return;
       cues[i].tr = e.t; cues[i].via = e.via; used++;
     });
     D('CACHE: dùng ' + used + '/' + arr.length + ' câu đã dịch' + (used < arr.filter(Boolean).length ? ' (bỏ câu do Google dịch để Gemini dịch lại)' : ''));
@@ -425,7 +424,7 @@
   // ---- Vòng lặp theo dõi video ----
   function loop() {
     let delay = 1000;
-    try { delay = tick(); } catch (e) { console.warn('[my-dual-subtitles]', e); }
+    try { delay = tick(); } catch (e) { console.warn('[TransVid]', e); }
     setTimeout(loop, delay);
   }
 
@@ -649,7 +648,6 @@
       if (v && !seenVideos.has(v)) {
         seenVideos.add(v);
         v.addEventListener('seeking', () => { dubbedIdx = -1; stopDub(); });
-        v.addEventListener('volumechange', onVolumeChange);
       }
     }
     applyMute(on);
@@ -681,30 +679,6 @@
   }
 
   // ---- Lồng tiếng ----
-  function duck(on) {
-    if (!video) return;
-    if (on) {
-      if (duckedFrom == null) {
-        duckedFrom = video.volume;
-        video.volume = duckedFrom * Number(cfg.duck);
-        duckSet = video.volume;
-      }
-    } else if (duckedFrom != null) {
-      video.volume = duckedFrom;
-      duckedFrom = null;
-      duckSet = null;
-    }
-  }
-
-  // Người dùng tự chỉnh âm lượng lúc đang giảm tiếng: giữ mức của họ, không khôi phục mức cũ.
-  function onVolumeChange(e) {
-    const v = e.target;
-    if (v === video && duckedFrom != null && duckSet != null && Math.abs(v.volume - duckSet) > 0.01) {
-      duckedFrom = null;
-      duckSet = null;
-    }
-  }
-
   function stopDub() {
     pendingIdx = -1;
     if (!dubActive) return;
@@ -712,7 +686,6 @@
     dubToken++;
     if (window.speechSynthesis) speechSynthesis.cancel();
     if (audio) { audio.pause(); audio = null; }
-    duck(false);
   }
 
   function voiceVol() {
@@ -743,7 +716,7 @@
     const c = cues[idx];
     stopDub();
     // Câu chỉ toàn ký hiệu (vd "[Âm nhạc]"): không có gì để đọc.
-    if (!speakable(c.tr)) { duck(false); return; }
+    if (!speakable(c.tr)) return;
     dubActive = true;
     const token = dubToken;
     // Thời gian còn lại của câu (câu xếp hàng có thể bắt đầu muộn).
@@ -755,9 +728,8 @@
       dubActive = false;
       const p = pendingIdx;
       pendingIdx = -1;
-      // Còn câu đang chờ và vẫn trong khung thời gian của nó: đọc tiếp, giữ nguyên mức giảm tiếng.
+      // Còn câu đang chờ và vẫn trong khung thời gian của nó: đọc tiếp.
       if (p >= 0 && cues[p] && cues[p].tr && cfg.enabled && video && !video.paused && video.currentTime < cues[p].end) dubCue(p);
-      else duck(false);
     };
 
     const voice = localVoice();
@@ -779,7 +751,6 @@
         a.onplaying = () => D('  PHÁT âm thanh (vol giọng=' + a.volume.toFixed(2) + ', vol video=' + video.volume.toFixed(2) + (video.muted ? ' TAB VIDEO MUTED' : '') + ')');
         a.onended = () => { D('  xong'); done(); };
         a.onerror = () => { D('  LỖI phát mã ' + (a.error && a.error.code)); lastError = 'Lỗi phát giọng đọc (mã ' + (a.error && a.error.code) + ')'; done(); };
-        duck(true);
         a.play().then(() => { if (/phát|bấm/.test(lastError)) lastError = ''; }).catch(e => {
           // NotAllowedError: Chrome chặn tự phát âm thanh khi chưa tương tác với trang.
           D('  play() BỊ TỪ CHỐI: ' + (e && e.name) + ' ' + (e && e.message));
@@ -801,7 +772,6 @@
     u.onstart = () => D('  giọng máy BẮT ĐẦU đọc');
     u.onend = () => { D('  giọng máy xong'); done(); };
     u.onerror = e => { D('  giọng máy LỖI: ' + (e && e.error)); done(); };
-    duck(true);
     speechSynthesis.speak(u);
     // Chrome đôi khi không gọi onend: hết hạn thì coi như đọc xong để hàng đợi không bị kẹt.
     // Ước lượng rộng tay (6 ký tự/giây + 10 giây) để không cắt nhầm giọng đọc chậm.

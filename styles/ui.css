@@ -1,23 +1,31 @@
 /* Giao diện popup + Cài đặt, dựng trên Pico CSS (pico.min.css, MIT). Chỉ dùng trong trang của extension. */
 
-/* Màu chủ đạo đỏ (cùng màu nút "Lồng tiếng" trên video), cỡ chữ gọn cho popup.
+/* Màu chủ đạo xanh tím (theo logo TransVid và nút "Lồng tiếng" trên video), cỡ chữ gọn cho popup.
    Bộ chọn :root:not([data-theme=_]) để đè cả biến của chế độ tối trong Pico. */
 :root:not([data-theme=_]) {
   --pico-font-size: 87.5%;
-  --pico-primary: #d93526;
-  --pico-primary-background: #d93526;
-  --pico-primary-border: #d93526;
-  --pico-primary-underline: rgba(217, 53, 38, 0.5);
-  --pico-primary-hover: #c52f21;
-  --pico-primary-hover-background: #c52f21;
-  --pico-primary-hover-border: #c52f21;
-  --pico-primary-focus: rgba(217, 53, 38, 0.3);
+  --pico-primary: #4338ca;
+  --pico-primary-background: #4f46e5;
+  --pico-primary-border: #4f46e5;
+  --pico-primary-underline: rgba(79, 70, 229, 0.5);
+  --pico-primary-hover: #3730a3;
+  --pico-primary-hover-background: #4338ca;
+  --pico-primary-hover-border: #4338ca;
+  --pico-primary-focus: rgba(99, 102, 241, 0.35);
   --pico-primary-inverse: #fff;
   --pico-form-element-spacing-vertical: 0.45rem;
   --pico-form-element-spacing-horizontal: 0.7rem;
   --pico-spacing: 0.9rem;
-  --pico-range-thumb-color: #d93526;
-  --pico-range-thumb-active-color: #c52f21;
+  --pico-range-thumb-color: #4f46e5;
+  --pico-range-thumb-active-color: #4338ca;
+}
+/* Chế độ tối: chữ màu chủ đạo sáng hơn để đủ tương phản trên nền tối. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme=_]) {
+    --pico-primary: #a5b4fc;
+    --pico-primary-hover: #c7d2fe;
+    --pico-primary-underline: rgba(165, 180, 252, 0.5);
+  }
 }
 
 .popup { width: 330px; padding: 14px 16px 16px; }
@@ -29,10 +37,8 @@
 .brand { display: flex; align-items: center; gap: 10px; min-width: 0; }
 .brand strong { display: block; font-size: 1.05rem; line-height: 1.2; }
 .brand small { display: block; color: var(--pico-muted-color); font-size: 0.8rem; }
-.logo {
-  flex: none; display: inline-grid; place-items: center; width: 34px; height: 34px; border-radius: 9px;
-  background: var(--pico-primary-background); color: #fff; font-weight: 800; font-size: 0.85rem; letter-spacing: 0.5px;
-}
+.logo { flex: none; width: 36px; height: 36px; display: block; }
+.options .logo { width: 44px; height: 44px; }
 .top input[role=switch] { margin: 0; flex: none; }
 
 /* Ô trạng thái */
