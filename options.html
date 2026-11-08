@@ -3,8 +3,15 @@
 <head><meta charset="utf-8"><title>Cài đặt — Lồng tiếng Việt</title><link rel="stylesheet" href="ui.css"></head>
 <body class="options">
   <h1>Cài đặt lồng tiếng Việt</h1>
-  <p class="muted">Dịch video YouTube tiếng Anh, tiếng Trung, tiếng Hindi sang tiếng Việt rồi đọc lên.
+  <p class="muted">Dịch phụ đề video YouTube, Udemy, Coursera sang tiếng Việt rồi đọc lên.
     Có key Gemini thì dịch bằng Gemini (hay hơn); không có key hoặc Gemini lỗi thì tự dùng Google Dịch.</p>
+  <section>
+    <h2>Bật lồng tiếng</h2>
+    <p class="muted">Mỗi video có nút <b>Lồng tiếng</b> ở góc phải dưới (rê chuột vào video để thấy).
+      Mặc định mọi video đều tắt: chỉ dịch và đọc khi bạn bấm nút. Video đã bật sẽ được nhớ.
+      Đang lồng tiếng thì tiếng gốc của video bị tắt hẳn; tắt lồng tiếng thì tiếng gốc trở lại.</p>
+    <label class="check"><input id="autoDub" type="checkbox"> Tự bật cho mọi video (trừ video bạn đã bấm tắt)</label>
+  </section>
   <section>
     <h2>Dịch</h2>
     <label>Gemini API key (miễn phí, lấy ở aistudio.google.com/apikey — bỏ trống = dùng Google Dịch)
@@ -20,7 +27,6 @@
       Trên Chrome cần key <b>Azure Speech</b> (gói miễn phí F0 tại portal.azure.com). Không có thì tự đọc bằng giọng Google.</p>
     <label>Azure Speech key (tuỳ chọn)<input id="azureKey" type="password" autocomplete="off"></label>
     <label>Azure region (vùng của key, ví dụ southeastasia, eastasia, eastus)<input id="azureRegion" placeholder="southeastasia"></label>
-    <label>Âm lượng video khi đang đọc (0–1)<input id="duck" type="number" min="0" max="1" step="0.05"></label>
   </section>
   <div class="btns">
     <button id="save">Lưu</button>

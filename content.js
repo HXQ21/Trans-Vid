@@ -2,9 +2,12 @@
   if (window.__bsubLoaded) return;
   window.__bsubLoaded = true;
 
-  const END_PUNCT = /[.!?…。！？」』"”')\]♪।]$/;
   const MAX_TRIES = 3;
   const BUILD = chrome.runtime.getManifest().version; // để popup biết tab có đang chạy mã cũ không
+  const HOST = location.hostname || '';
+  const IS_YT = /(^|\.)youtube\.com$/.test(HOST);
+  const IS_UDEMY = /(^|\.)udemy\.com$/.test(HOST);
+  const IS_COURSERA = /(^|\.)coursera\.org$/.test(HOST);
 
   // Nhật ký chẩn đoán (150 dòng gần nhất), popup lấy qua tin nhắn 'diag'.
   const diag = [];
@@ -16,10 +19,17 @@
   };
   const pageVideoId = () => new URLSearchParams(location.search).get('v')
     || ((/^\/(?:shorts|embed|live)\/([\w-]{6,})/.exec(location.pathname || '') || [])[1]) || '';
+  // Mỗi video / bài học có một khoá riêng để nhớ đã bấm bật hay tắt lồng tiếng.
+  const vidKey = () => (IS_YT ? 'yt:' + pageVideoId() : 'pg:' + HOST + (location.pathname || ''));
+  // Video này có đang bật lồng tiếng không: đã bấm nút thì theo lần bấm, chưa bấm thì theo "Tự bật cho mọi video".
+  const isOn = () => {
+    const m = cfg.dubVideos || {}, k = vidKey();
+    return Object.prototype.hasOwnProperty.call(m, k) ? !!m[k] : !!cfg.autoDub;
+  };
 
   let cfg = { ...BSUB_DEFAULTS };
   let cues = [];            // { start, end, text, tr, busy, failed, tries }
-  let cueKey = '', cueLang = '';
+  let cueKey = '', cueLang = '', cueIsVi = false;   // cueIsVi: phụ đề Việt do người làm, đọc thẳng không dịch
   let unsupportedLang = '';
   let lastError = '', via = '';
   let gen = 0;              // tăng mỗi khi các yêu cầu dịch đang chạy trở nên lỗi thời
@@ -52,8 +62,8 @@
     if (clear) {
       gen++;
       cues.forEach(c => { c.tr = null; });
-      loadCache().then(translateAll);
-    } else if (resume && cfg.enabled) {
+      { const g = gen; loadCache().then(() => { if (g === gen) translateAll(); }); }
+    } else if (resume && cfg.enabled && isOn()) {
       translateAll();
     }
   });
@@ -65,9 +75,12 @@
         total: cues.length,
         done: cues.filter(c => c.tr).length,
         failed: cues.filter(c => c.failed).length,
-        lang: cueLang, unsupportedLang, error: lastError, via,
-        build: BUILD
+        lang: cueLang, unsupportedLang, error: lastError, via, viDirect: cueIsVi,
+        build: BUILD, on: isOn()
       });
+    } else if (m.type === 'toggleDub') {
+      toggleDub();
+      reply({ on: isOn() });
     } else if (m.type === 'diag') {
       const vi = window.speechSynthesis ? speechSynthesis.getVoices().filter(v => v.lang.toLowerCase().startsWith('vi')).map(v => v.name) : [];
       const t = video ? video.currentTime : 0;
@@ -81,7 +94,7 @@
         timedtextSeenByBrowser: performance.getEntriesByType('resource').filter(x => x.name.includes('/api/timedtext')).map(x => (new URL(x.name).searchParams.get('v') || '?') + '/' + (new URL(x.name).searchParams.get('lang') || '?')),
         lastError, log: diag.slice()
       });
-    } else if (m.type === 'retranslate' && cues.length) {
+    } else if (m.type === 'retranslate' && cues.length && !cueIsVi) {
       gen++;
       cues.forEach(c => { c.tr = null; });
       translateAll();
@@ -104,19 +117,67 @@
     const pv = pageVideoId();
     if (p.get('v') && pv && p.get('v') !== pv) { D('  -> bỏ: phụ đề của video khác'); return; }
     const lang = p.get('lang') || '';
-    if (!bsubSourceLang(lang)) {
-      // Chỉ hỗ trợ tiếng Anh / Trung / Hindi.
-      unsupportedLang = lang;
-      resetCues();
-      return;
+    if (!bsubSourceLang(lang)) { unsupportedLang = lang; resetCues(); return; }
+    const isVi = bsubIsVi(lang);
+    if (isVi && p.get('kind') === 'asr') {
+      // Phụ đề tự động tiếng Việt = video vốn nói tiếng Việt: không cần lồng tiếng.
+      D('  -> video nói tiếng Việt, không lồng tiếng');
+      unsupportedLang = 'vi-video'; resetCues(); return;
     }
     unsupportedLang = '';
+    if (!isVi && preferViAskedFor !== pv && isOn()) {
+      // Video có thể có phụ đề Việt do người làm: nhờ hook.js chuyển trình phát sang phụ đề đó.
+      preferViAskedFor = pv;
+      window.postMessage({ __bsub: 'preferVi' }, location.origin);
+    }
     const key = 'yt|' + [p.get('v'), lang, p.get('kind') || '', p.get('name') || ''].join('|');
     if (key === cueKey) return;
-    const list = mergeCues(parseTimedText(e.data.text), p.get('kind') === 'asr');
+    const list = mergeCues(parseTimedText(e.data.text), p.get('kind') === 'asr', lang);
     D('  -> ' + list.length + ' câu' + (list.length ? ', câu đầu: "' + list[0].text.slice(0, 60) + '"' : ''));
-    if (list.length) setCues(key, lang, list);
+    if (list.length) setCues(key, lang, list, isVi);
   });
+  let preferViAskedFor = '';
+
+  // ---- Udemy: hook.js bắt tệp VTT trình phát tải về (vtt-cf.udemycdn.com/<mã>/<ngôn ngữ>/....vtt) ----
+  window.addEventListener('message', e => {
+    if (e.source !== window || !e.data || e.data.__bsub !== 'vtt') return;
+    handleVtt(e.data.url, e.data.text);
+  });
+  function handleVtt(url, text) {
+    const m = /udemycdn\.com\/[^/]+\/([A-Za-z]{2,3}(?:[_-][A-Za-z]{2,4})?)\//.exec(String(url));
+    const lang = m ? m[1] : '';
+    D('PHỤ ĐỀ VTT đến: lang=' + lang + (udemyAutoLangs.has(bsubSourceLang(lang)) ? ' (máy dịch)' : ''));
+    if (!bsubSourceLang(lang)) return;
+    const isVi = bsubIsVi(lang);
+    if (!udemyMenuKnown) {
+      // Udemy tự tải lại phụ đề lần trước bạn chọn (có thể là bản máy dịch, vd Hy Lạp / Việt [Auto]):
+      // chưa đọc menu thì chưa dịch, giữ lại tệp mới nhất, quyết định sau khi đọc menu.
+      D('  -> tạm giữ: chờ đọc menu phụ đề');
+      pendingVtt = { url, text }; return;
+    }
+    if (udemyChosenLang && bsubSourceLang(lang) !== udemyChosenLang) {
+      D('  -> bỏ: không phải phụ đề đã chọn (' + udemyChosenLang + ')'); return;
+    }
+    if (isVi && udemyMenuKnown === 'fallback') {
+      D('  -> bỏ: không đọc được menu nên không rõ bản Việt này có phải máy dịch không'); return;
+    }
+    if (isVi && udemyAutoLangs.has('vi')) {
+      // Tiếng Việt [Auto] là máy dịch: bỏ, chọn lại bản [CC] để Gemini dịch.
+      D('  -> bỏ: tiếng Việt máy dịch, chọn lại phụ đề do người làm');
+      udemyTriedFor = ''; return;
+    }
+    const key = 'ud|' + String(url).split('?')[0];
+    if (key === cueKey) return;
+    const list = mergeCues(bsubParseVtt(text).map(c => ({ ...c, text: cleanCaption(c.text) })).filter(c => c.text), false, lang);
+    D('  -> ' + list.length + ' câu');
+    if (list.length) setCues(key, lang, list, isVi);
+  }
+  const udemyAutoLangs = new Set();   // ngôn ngữ mà menu Udemy ghi "[Auto]"
+  let udemyTriedFor = '', udemyMenuKnown = false, udemyChosenLang = '', pendingVtt = null, udemyNoMenuAt = 0;
+  function flushPendingVtt() {
+    if (!pendingVtt) return;
+    const pv = pendingVtt; pendingVtt = null; handleVtt(pv.url, pv.text);
+  }
   document.addEventListener('yt-navigate-start', () => { unsupportedLang = ''; resetCues(); });
 
   function attr(a, n) {
@@ -171,40 +232,39 @@
     return out;
   }
 
-  // Gộp các mảnh câu (nhất là phụ đề tự động) thành câu ngắn để dịch và đọc tự nhiên hơn.
-  // asr = phụ đề tự động (không có dấu câu): gộp dài hơn để mỗi đoạn là một ý trọn vẹn,
-  // ngắt khi người nói ngừng (khoảng lặng) thay vì cắt giữa câu.
-  function mergeCues(list, asr) {
-    const maxGap = asr ? 0.8 : 1, maxDur = asr ? 12 : 8, maxLen = asr ? 220 : 160;
-    const out = [];
-    for (const c of list) {
-      const p = out[out.length - 1];
-      if (p && !END_PUNCT.test(p.text) && c.start - p.end < maxGap && c.end - p.start < maxDur && p.text.length + c.text.length < maxLen) {
-        p.text += ' ' + c.text;
-        p.end = c.end;
-      } else {
-        out.push({ start: c.start, end: c.end, text: c.text, tr: null });
-      }
-    }
-    return out;
+  // Ghép các mảnh phụ đề thành câu trọn vẹn để dịch và đọc tự nhiên hơn (shared.js: bsubSegmentSentences).
+  // asr = phụ đề tự động (không có dấu câu): ngắt khi người nói ngừng hoặc đoạn đủ dài.
+  function mergeCues(list, asr, lang) {
+    return bsubSegmentSentences(list, { asr, lang: bsubSourceLang(lang) || 'en' });
   }
 
   // ---- Dịch ----
-  function setCues(key, lang, list) {
+  function setCues(key, lang, list, isVi = false) {
     gen++;
     cueKey = key;
     cueLang = lang;
+    cueIsVi = isVi;
     cues = list;
     dubbedIdx = -1;
     lastError = '';
     stopDub();
-    loadCache().then(translateAll);
+    if (isVi) {
+      // Phụ đề tiếng Việt do người làm: đọc thẳng, không dịch, không tốn lượt Gemini.
+      cues.forEach(c => { c.tr = c.text; c.via = 'vi-sub'; });
+      via = 'vi-sub';
+      D('Phụ đề tiếng Việt có sẵn: đọc thẳng ' + cues.length + ' câu, không dịch');
+      return;
+    }
+    // Chưa bấm nút "Lồng tiếng": giữ phụ đề, chưa dịch (bấm nút thì dịch ngay).
+    if (!isOn()) { D('Chưa bật lồng tiếng cho video này: giữ phụ đề, chưa dịch'); return; }
+    { const g = gen; loadCache().then(() => { if (g === gen) translateAll(); }); }
   }
 
   function resetCues() {
     gen++;
     cueKey = '';
     cueLang = '';
+    cueIsVi = false;
     cues = [];
     dubbedIdx = -1;
     stopDub();
@@ -239,6 +299,7 @@
   // reset=true: lần dịch mới (đổi video, đổi key, bấm Dịch lại) -> đếm lại số lần thử.
   // reset=false: tự thử lại các dòng lỗi, dòng nào lỗi đủ MAX_TRIES lần thì bỏ.
   async function translateAll(reset = true) {
+    if (cueIsVi) return;   // phụ đề Việt đọc thẳng, không có gì để dịch
     const my = ++gen;
     clearTimeout(retryTimer);
     for (const c of cues) {
@@ -248,7 +309,7 @@
     }
     const worker = async () => {
       for (;;) {
-        if (my !== gen || !cfg.enabled) return;
+        if (my !== gen || !cfg.enabled || !isOn()) return;
         const batch = nextBatch();
         if (!batch) return;
         // Ngữ cảnh: tên video + tối đa 8 câu ngay trước lô (kèm bản dịch nếu có) để dịch đúng mạch, xưng hô thống nhất.
@@ -273,7 +334,7 @@
       }
     };
     await Promise.all([worker(), worker()]);
-    if (my !== gen || !cfg.enabled) return;
+    if (my !== gen || !cfg.enabled || !isOn()) return;
     const left = cues.filter(c => c.tr == null && (c.tries || 0) < MAX_TRIES);
     if (left.length && left.some(c => c.failed)) {
       const n = Math.max(...left.map(c => c.tries || 0));
@@ -293,7 +354,7 @@
   }
 
   async function upgradeGoogle(my) {
-    if (my !== gen || !cfg.enabled || !cfg.geminiKey) return;
+    if (my !== gen || !cfg.enabled || !cfg.geminiKey || !isOn()) return;
     const n = cues.length, from = Math.max(0, findIdx(video ? video.currentTime : 0));
     const idx = [];
     for (let k = 0; k < n && idx.length < 20; k++) {
@@ -336,7 +397,7 @@
     return (h >>> 0).toString(36) + '_' + s.length;
   }
   // 'v4': cache ghi kèm engine đã dịch mỗi câu (bản v3 trộn lẫn câu Google dự phòng vào cache Gemini).
-  const cacheId = () => 'cache:' + hash('v4|' + cueKey + '|vi|' + (cfg.geminiKey ? cfg.geminiModel : 'google'));
+  const cacheId = () => 'cache:' + hash('v5|' + cueKey + '|vi|' + (cfg.geminiKey ? cfg.geminiModel : 'google'));
 
   async function loadCache() {
     if (!cueKey) return;
@@ -369,7 +430,80 @@
   }
 
   function pickVideo() {
-    return document.querySelector('#movie_player video, .html5-video-player video');
+    if (IS_YT) return document.querySelector('#movie_player video, .html5-video-player video');
+    let best = null, area = 0;
+    for (const v of document.querySelectorAll('video')) {
+      const r = v.getBoundingClientRect(), a = r.width * r.height;
+      if (a > area) { best = v; area = a; }
+    }
+    return area > 20000 ? best : null;
+  }
+
+  // ---- Coursera: đọc thẻ <track> của video, tải thẳng tệp VTT (không cần bật CC) ----
+  let trackLoading = '', lastScan = 0;
+  function scanTracks() {
+    if (!IS_COURSERA || !video || Date.now() - lastScan < 1000) return;
+    lastScan = Date.now();
+    const list = Array.from(video.querySelectorAll('track'))
+      .map(t => ({ label: t.label || '', lang: t.srclang || '', src: t.getAttribute('src') }))
+      .filter(t => t.src);
+    const pick = bsubPickCaption(list);
+    if (!pick) return;
+    const key = 'cr|' + pick.src.split('?')[0];
+    if (key === cueKey || key === trackLoading) return;
+    trackLoading = key;
+    D('PHỤ ĐỀ Coursera: chọn "' + pick.label + '" (' + pick.lang + ')' + (pick.vi ? ' — đọc thẳng' : ''));
+    fetch(pick.src, { credentials: 'include' }).then(r => (r.ok ? r.text() : Promise.reject(new Error('HTTP ' + r.status)))).then(text => {
+      if (trackLoading !== key) return;
+      const cuesIn = bsubParseVtt(text).map(c => ({ ...c, text: cleanCaption(c.text) })).filter(c => c.text);
+      const merged = mergeCues(cuesIn, false, pick.lang);
+      D('  -> ' + merged.length + ' câu');
+      if (merged.length) setCues(key, pick.lang, merged, pick.vi);
+    }).catch(err => { D('  -> tải phụ đề lỗi: ' + err.message); trackLoading = ''; });
+  }
+
+  // ---- Udemy: tự mở menu Captions, chọn Việt do người làm hoặc bản [CC]; ghi nhớ ngôn ngữ nào là [Auto] ----
+  function udemyPick() {
+    if (!IS_UDEMY || !video || cues.length) return;
+    const id = video.currentSrc || video.src || '';
+    const btn = document.querySelector('button[aria-label="Captions"], button[aria-label="Phụ đề"], [data-purpose="captions-dropdown-button"]');
+    if (!btn) {
+      // Không tìm thấy menu (Udemy đổi giao diện?): sau 3 giây dùng tệp đang có (trừ bản Việt chưa rõ nguồn).
+      if (!udemyNoMenuAt) udemyNoMenuAt = Date.now();
+      else if (!udemyMenuKnown && Date.now() - udemyNoMenuAt > 3000) { udemyMenuKnown = 'fallback'; D('Udemy: không thấy menu phụ đề, dùng tệp đang có'); flushPendingVtt(); }
+      return;
+    }
+    if (!id || udemyTriedFor === id) return;
+    udemyTriedFor = id;
+    btn.click();
+    setTimeout(() => {
+      // Chỉ đọc menu PHỤ ĐỀ (menu có mục "Off"/"Tắt"), không lẫn menu tốc độ phát / chất lượng.
+      const menus = Array.from(document.querySelectorAll('[role="menu"]'));
+      const labelsOf = m => Array.from(m.querySelectorAll('[role="menuitemradio"], li')).map(el => (el.innerText || '').trim().split('\n')[0]);
+      const mi = bsubFindCaptionMenu(menus.map(labelsOf));
+      if (mi < 0) {
+        D('Udemy: không thấy menu phụ đề (không có mục "Off"), không chọn gì');
+        btn.click();
+        udemyMenuKnown = 'fallback'; flushPendingVtt();
+        return;
+      }
+      const items = Array.from(menus[mi].querySelectorAll('[role="menuitemradio"], li'));
+      const langOf = l => (/viet|việt/i.test(l) ? 'vi' : /english|tiếng anh/i.test(l) ? 'en' : 'und');
+      const list = items.map(el => ({ el, label: (el.innerText || '').trim().split('\n')[0], lang: '' }))
+        .filter(x => x.label && !/caption settings|cài đặt/i.test(x.label))
+        .map(x => ({ ...x, lang: langOf(x.label) }));
+      list.forEach(x => { if (bsubIsAutoLabel(x.label)) udemyAutoLangs.add(x.lang); });
+      const pick = bsubPickCaption(list);
+      D('Udemy: menu có ' + list.length + ' phụ đề, chọn ' + (pick ? '"' + pick.label + '"' : 'không có'));
+      if (list.length) {
+        udemyMenuKnown = true;
+        // Chỉ nhận tệp đúng ngôn ngữ đã chọn ('und' = ngôn ngữ khác Anh/Việt: nhận mọi tệp không phải tiếng Việt).
+        udemyChosenLang = pick && pick.lang !== 'und' ? pick.lang : '';
+        flushPendingVtt();
+      }
+      if (pick) (pick.el.querySelector('button') || pick.el).click();
+      else btn.click();
+    }, 800);
   }
 
   function adShowing() {
@@ -379,7 +513,7 @@
 
   // YouTube chỉ tải phụ đề khi CC bật. Đang lồng tiếng mà chưa có phụ đề và CC tắt:
   // bấm CC một lần cho mỗi video (không giành lại nếu người dùng tự tắt sau đó).
-  let ccTriedFor = '', ccSeenAt = 0;
+  let ccTriedFor = '', ccSeenAt = 0, lastVideoSrc = '';
   function autoCaptions() {
     const id = pageVideoId();
     if (!id || !video || cues.length || unsupportedLang || adShowing() || ccTriedFor === id) { ccSeenAt = 0; return; }
@@ -393,12 +527,121 @@
     btn.click();
   }
 
+  // ---- Nút "Lồng tiếng" ở góc phải dưới video ----
+  let btnEl = null, wasOn = null;
+
+  function toggleDub() {
+    const k = vidKey(), m = { ...(cfg.dubVideos || {}) };
+    const next = isOn() ? 0 : 1;
+    delete m[k];
+    m[k] = next;   // đưa xuống cuối để khi quá 300 video thì bỏ video cũ nhất
+    const keys = Object.keys(m);
+    while (keys.length > 300) delete m[keys.shift()];
+    cfg.dubVideos = m;
+    chrome.storage.local.set({ dubVideos: m }).catch(() => {});
+    updateButton();
+  }
+
+  // Đang lồng tiếng: tắt hẳn tiếng video gốc (loa bị bật lại thì tắt lại ngay).
+  // Tắt lồng tiếng: bật lại tiếng, nhưng chỉ khi chính extension đã tắt (video vốn tắt tiếng thì giữ nguyên).
+  let mutedVideo = null;
+  function applyMute(on) {
+    if (on && video) {
+      if (mutedVideo && mutedVideo !== video) restoreMute();
+      if (!video.muted) { video.muted = true; mutedVideo = video; D('Tắt tiếng video gốc'); }
+    } else if (mutedVideo) restoreMute();
+  }
+  function restoreMute() {
+    if (!mutedVideo) return;
+    const v = mutedVideo;
+    mutedVideo = null;
+    if (v.muted) { v.muted = false; D('Bật lại tiếng video gốc'); }
+  }
+
+  // Bật: dịch ngay phụ đề đã có, cho phép tự bật CC / chọn phụ đề lại.
+  function turnOn() {
+    D('BẬT lồng tiếng cho video này');
+    ccTriedFor = ''; udemyTriedFor = '';
+    if (IS_YT && cues.length && !cueIsVi && preferViAskedFor !== pageVideoId()) {
+      preferViAskedFor = pageVideoId();
+      window.postMessage({ __bsub: 'preferVi' }, location.origin);
+    }
+    if (cues.length && !cueIsVi) { const g = gen; loadCache().then(() => { if (g === gen) translateAll(); }); }
+  }
+
+  // Tắt: dừng đọc, dừng dịch. Giữ phụ đề và bản dịch đã có để bật lại thì đọc ngay.
+  function turnOff() {
+    D('TẮT lồng tiếng cho video này');
+    gen++;
+    clearTimeout(retryTimer); clearTimeout(upgradeTimer);
+    stopDub();
+  }
+
+  // Khung chứa nút: trình phát YouTube; trang khác thì lấy khung lớn nhất quanh video có cùng cỡ
+  // (để rê chuột lên phần điều khiển của trình phát vẫn thấy nút).
+  function hostFor(v) {
+    if (IS_YT) return (v.closest && v.closest('.html5-video-player')) || v.parentElement;
+    let h = v.parentElement;
+    const r = v.getBoundingClientRect();
+    for (let p = h && h.parentElement, i = 0; p && p !== document.body && p.getBoundingClientRect && i < 6; p = p.parentElement, i++) {
+      const q = p.getBoundingClientRect();
+      if (Math.abs(q.width - r.width) > 4 || Math.abs(q.height - r.height) > 60) break;
+      h = p;
+    }
+    return h;
+  }
+
+  function updateButton() {
+    const v = video;
+    if (!cfg.enabled || !v) { if (btnEl) btnEl.style.display = 'none'; return; }
+    const host = hostFor(v);
+    if (!host) return;
+    if (!btnEl) {
+      btnEl = document.createElement('button');
+      btnEl.classList.add('bsub-btn');
+      btnEl.setAttribute('type', 'button');
+      // Không để trình phát nhận cú bấm (YouTube bấm vào khung = tạm dừng).
+      for (const t of ['mousedown', 'mouseup', 'pointerdown', 'pointerup', 'dblclick', 'touchstart', 'keydown']) btnEl.addEventListener(t, e => e.stopPropagation());
+      btnEl.addEventListener('click', e => { e.preventDefault(); e.stopPropagation(); toggleDub(); });
+    }
+    if (btnEl.parentNode !== host) {
+      host.appendChild(btnEl);
+      host.classList.add('bsub-host');
+      if (getComputedStyle(host).position === 'static') host.style.position = 'relative';
+    }
+    btnEl.style.display = '';
+    const on = isOn();
+    let label;
+    if (!on) label = 'Lồng tiếng: Tắt';
+    else if (unsupportedLang === 'vi-video') label = 'Video đã là tiếng Việt';
+    else if (unsupportedLang) label = 'Không đọc được phụ đề';
+    else if (!cues.length) label = 'Đang tìm phụ đề…';
+    else {
+      const done = cueIsVi ? cues.length : cues.filter(c => c.tr).length;
+      label = done >= cues.length ? 'Lồng tiếng: Bật' : 'Lồng tiếng: Bật · dịch ' + Math.floor(done * 100 / cues.length) + '%';
+    }
+    if (btnEl.textContent !== label) btnEl.textContent = label;
+    btnEl.classList.toggle('bsub-on', on);
+    btnEl.title = on ? 'Bấm để tắt lồng tiếng Việt cho video này' : 'Bấm để lồng tiếng Việt cho video này';
+  }
+
   function tick() {
-    const active = cfg.enabled && cues.length > 0;
+    const on = cfg.enabled && isOn();
+    const active = on && cues.length > 0;
     // Đang lồng tiếng: ẩn phụ đề của YouTube (phụ đề chỉ dùng làm nguồn dịch).
     document.documentElement.classList.toggle('bsub-hide-native', active);
-    if (!cfg.enabled) return 500;
+    if (on && wasOn !== true) turnOn();
+    else if (!on && wasOn === true) turnOff();
+    wasOn = on;
+    if (!cfg.enabled) { applyMute(false); updateButton(); return 500; }
     const v = pickVideo();
+    const src = v ? v.currentSrc || v.src || '' : '';
+    if (!IS_YT && v && video && src && lastVideoSrc && src !== lastVideoSrc) {
+      // Udemy/Coursera chuyển bài học trong cùng trang: bỏ phụ đề của bài cũ.
+      D('Đổi bài học, bỏ phụ đề cũ');
+      resetCues(); trackLoading = '';
+    }
+    if (src) lastVideoSrc = src;
     if (v !== video) {
       stopDub();
       video = v;
@@ -409,7 +652,14 @@
         v.addEventListener('volumechange', onVolumeChange);
       }
     }
-    autoCaptions();
+    applyMute(on);
+    updateButton();
+    // Chưa bấm nút: không bật CC, không mở menu phụ đề, không tải phụ đề.
+    if (on) {
+      if (IS_YT) autoCaptions();
+      scanTracks();
+      udemyPick();
+    }
     if (!video || !active) return 500;
 
     const t = video.currentTime;

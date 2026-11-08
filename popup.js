@@ -4,7 +4,7 @@ bsubGet().then(cfg => {
   $('enabled').checked = !!cfg.enabled;
   $('enabled').onchange = () => chrome.storage.local.set({ enabled: $('enabled').checked });
   // Thanh âm lượng (0–100%), lưu dạng 0–1; kéo tới đâu áp dụng tới đó.
-  for (const id of ['voiceVolume', 'duck']) {
+  for (const id of ['voiceVolume']) {
     const show = () => { $(id + 'Val').textContent = $(id).value + '%'; };
     $(id).value = Math.round(Number(cfg[id]) * 100);
     show();
@@ -40,13 +40,13 @@ async function toTab(msg) {
   if (!tab) return { why: 'notab' };
   // Không đọc được URL = extension chưa được phép truy cập trang này.
   if (!tab.url) return { why: 'noaccess' };
-  if (!/^https?:\/\/([^/]+\.)?youtube\.com\//.test(tab.url)) return { why: 'notyt' };
+  if (!/^https?:\/\/([^/]+\.)?(youtube\.com|udemy\.com|coursera\.org)\//.test(tab.url)) return { why: 'notyt' };
   try { return { r: await chrome.tabs.sendMessage(tab.id, msg) }; } catch (e) { return { why: 'noscript' }; }
 }
 
 const WHY = {
-  notab: 'Mở một video YouTube để dùng.',
-  notyt: 'Mở một video YouTube để dùng.',
+  notab: 'Mở một video YouTube, Udemy hoặc Coursera để dùng.',
+  notyt: 'Mở một video YouTube, Udemy hoặc Coursera để dùng.',
   noaccess: 'Extension chưa được phép chạy trên YouTube: bấm chuột phải icon extension → "Có thể đọc và thay đổi dữ liệu trang web" → "Trên youtube.com", rồi tải lại trang (F5).',
   noscript: 'Extension chưa chạy trong tab này: bấm F5 để tải lại trang YouTube, rồi bật CC.'
 };
@@ -57,10 +57,13 @@ async function refresh() {
   $('ver').textContent = 'v' + ver;
   let text;
   if (!r) text = WHY[why] || WHY.noscript;
-  else if (r.build !== ver) text = 'Tab này đang chạy mã cũ (' + (r.build ? 'v' + r.build : 'bản trước') + '). Bấm F5 để tải lại trang YouTube.';
-  else if (r.unsupportedLang) text = 'Phụ đề "' + r.unsupportedLang + '" chưa hỗ trợ. Chỉ dịch từ tiếng Anh, tiếng Trung, tiếng Hindi.';
-  else if (!r.total) text = 'Chưa bắt được phụ đề. Bấm CC trên video (phụ đề tiếng Anh/Trung/Hindi).';
-  else text = 'Đã dịch ' + r.done + '/' + r.total + ' câu (' + (BSUB_SOURCE_LANGS[bsubSourceLang(r.lang)] || r.lang) + ' → tiếng Việt)' + (r.failed ? ' · lỗi ' + r.failed : '');
+  else if (r.build !== ver) text = 'Tab này đang chạy mã cũ (' + (r.build ? 'v' + r.build : 'bản trước') + '). Bấm F5 để tải lại trang.';
+  else if (r.on === false) text = 'Chưa bật cho video này. Rê chuột vào video, bấm nút "Lồng tiếng" ở góc phải dưới.';
+  else if (r.unsupportedLang === 'vi-video') text = 'Video đã nói tiếng Việt, không cần lồng tiếng.';
+  else if (r.unsupportedLang) text = 'Không đọc được phụ đề "' + r.unsupportedLang + '".';
+  else if (!r.total) text = 'Chưa bắt được phụ đề. Phát video và đợi vài giây (video phải có phụ đề).';
+  else if (r.viDirect) text = 'Đang đọc phụ đề tiếng Việt có sẵn (' + r.total + ' câu, không cần dịch).';
+  else text = 'Đã dịch ' + r.done + '/' + r.total + ' câu (' + bsubLangName(r.lang) + ' → tiếng Việt)' + (r.failed ? ' · lỗi ' + r.failed : '');
   $('progress').textContent = text;
   $('err').hidden = !(r && r.error);
   $('err').textContent = (r && r.error) || '';

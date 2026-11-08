@@ -210,6 +210,7 @@ async function onTranslate({ lines, lang, title, before }) {
 }
 
 const SRC_EN = { en: 'English', zh: 'Chinese', hi: 'Hindi' };
+const srcName = code => { if (SRC_EN[code]) return SRC_EN[code]; try { return new Intl.DisplayNames(['en'], { type: 'language' }).of(code) || 'the source language'; } catch (e) { return 'the source language'; } };
 
 async function translateLines(cfg, lines, src, ctx = {}) {
   const beforeSrc = (ctx.before || []).map(b => b.src);
@@ -220,7 +221,7 @@ async function translateLines(cfg, lines, src, ctx = {}) {
   }
   if (cfg.geminiKey) {
     try {
-      const translations = await geminiTranslate(cfg, lines, SRC_EN[src] || 'the source language', ctx);
+      const translations = await geminiTranslate(cfg, lines, srcName(src), ctx);
       return { translations, via: 'gemini', model: lastGeminiModel };
     } catch (e) {
       // Hết lượt miễn phí / key sai / quá giờ / mạng lỗi: chuyển sang Google Dịch.

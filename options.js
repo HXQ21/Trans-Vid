@@ -1,10 +1,15 @@
 const $ = id => document.getElementById(id);
-const FIELDS = ['geminiKey', 'geminiModel', 'voice', 'azureKey', 'azureRegion', 'duck'];
+const FIELDS = ['geminiKey', 'geminiModel', 'voice', 'azureKey', 'azureRegion'];
 const hasAzure = () => !!$('azureKey').value.trim();
 
 bsubGet().then(cfg => {
   bsubFillVoices($('voice'), cfg.voice, !!cfg.azureKey);
   for (const k of FIELDS) $(k).value = cfg[k];
+  $('autoDub').checked = !!cfg.autoDub;
+});
+$('autoDub').addEventListener('change', async () => {
+  await chrome.storage.local.set({ autoDub: $('autoDub').checked });
+  note('Đã tự lưu.');
 });
 bsubWatchVoices($('voice'), hasAzure);
 // Nhập/xoá key Azure: cập nhật ghi chú của giọng Nam Minh / Hoài My.
@@ -25,7 +30,6 @@ async function save() {
   }
   o.geminiModel = o.geminiModel || BSUB_DEFAULTS.geminiModel;
   o.azureRegion = (o.azureRegion || BSUB_DEFAULTS.azureRegion).toLowerCase().replace(/[^a-z0-9]/g, '');
-  o.duck = Math.min(1, Math.max(0, isFinite(o.duck) ? o.duck : 0.2));
   await chrome.storage.local.set(o);
 }
 

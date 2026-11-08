@@ -1,13 +1,21 @@
 # My Dual Subtitles
 
-Chrome/Edge extension (Manifest V3) lồng tiếng Việt cho video YouTube có phụ đề tiếng Anh, tiếng Trung hoặc tiếng Hindi. Lấy phụ đề của YouTube, dịch sang tiếng Việt, rồi đọc bằng giọng nói. Không vẽ phụ đề lên video; phụ đề gốc của YouTube bị ẩn.
+Chrome/Edge extension (Manifest V3) lồng tiếng Việt cho video **YouTube, Udemy, Coursera** (trên web). Lấy phụ đề của trang; có phụ đề **tiếng Việt do người làm** thì đọc thẳng, không thì dịch phụ đề gốc (mọi ngôn ngữ) sang tiếng Việt rồi đọc bằng giọng nói. Không vẽ phụ đề lên video; phụ đề gốc của YouTube bị ẩn.
+
+## Chọn phụ đề (quyết định của người dùng)
+
+- Tiếng Việt **do người làm**: đọc thẳng (`setCues(..., isVi=true)`), không dịch, không tốn lượt Gemini.
+- Tiếng Việt **do máy dịch** (YouTube "Tự động dịch"/`tlang`, Udemy `[Auto]`, Coursera `(auto)`): **không dùng**, Gemini dịch từ phụ đề gốc do người làm (`bsubPickCaption`, `bsubIsAutoLabel` trong `shared.js`).
+- YouTube: phụ đề tự động tiếng Việt (`lang=vi&kind=asr`) = video vốn nói tiếng Việt, không lồng tiếng. Có phụ đề Việt do người làm thì `hook.js` chuyển trình phát sang (`preferVi`).
+- Udemy: `hook.js` bắt tệp `vtt-cf.udemycdn.com/<mã>/<ngôn ngữ>/….vtt`; `content.js` tự mở menu Captions để đọc nhãn `[Auto]`/`[CC]` và chọn bản tốt nhất. Udemy tự tải lại phụ đề lần trước (có thể là bản máy dịch) nên **mọi tệp VTT được giữ tới khi đọc xong menu**, sau đó chỉ nhận đúng ngôn ngữ đã chọn; không thấy menu thì sau 3 giây dùng tệp đang có (trừ tiếng Việt chưa rõ nguồn). Nhãn máy làm có cả bản giao diện tiếng Việt `[Tự động]`. Không có bản người làm thì dùng bản tự động của tiếng gốc (Anh trước) để dịch.
+- Coursera: đọc thẻ `<track>` của video, tải thẳng VTT (không cần bật CC).
 
 ## Cấu trúc
 
 | File | Chạy ở | Việc |
 |---|---|---|
-| `hook.js` | Trang YouTube (MAIN world) | Chặn fetch/XHR `/api/timedtext`, gửi phụ đề bằng `postMessage` |
-| `content.js` | Trang YouTube | Gộp câu, gọi dịch theo lô, đọc đúng lúc, giảm âm lượng video, cache bản dịch |
+| `hook.js` | YouTube, Udemy (MAIN world) | Chặn fetch/XHR `/api/timedtext` (YouTube) và tệp `.vtt` (Udemy), gửi bằng `postMessage`; chuyển YouTube sang phụ đề Việt do người làm |
+| `content.js` | YouTube, Udemy, Coursera | Chọn phụ đề, gộp câu, gọi dịch theo lô, đọc đúng lúc, giảm âm lượng video, cache bản dịch |
 | `background.js` | Service worker | Tin nhắn `translate`, `tts`, `test`. Dịch bằng Gemini, lỗi thì dùng Google Dịch. Tạo giọng bằng Google hoặc Azure |
 | `shared.js` | Cả 3 nơi | Cấu hình mặc định, ngôn ngữ nguồn, giọng Microsoft, `bsubStripSymbols` |
 | `voices.js` | popup + options | Danh sách giọng, nút nghe thử |
