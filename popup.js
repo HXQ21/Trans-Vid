@@ -48,7 +48,7 @@ const WHY = {
   notab: 'Mở một video YouTube, Udemy hoặc Coursera để dùng.',
   notyt: 'Mở một video YouTube, Udemy hoặc Coursera để dùng.',
   noaccess: 'Extension chưa được phép chạy trên YouTube: bấm chuột phải icon extension → "Có thể đọc và thay đổi dữ liệu trang web" → "Trên youtube.com", rồi tải lại trang (F5).',
-  noscript: 'Extension chưa chạy trong tab này: bấm F5 để tải lại trang YouTube, rồi bật CC.'
+  noscript: 'Extension chưa chạy trong tab này: bấm F5 để tải lại trang video.'
 };
 
 async function refresh() {

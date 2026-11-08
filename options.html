@@ -1,40 +1,68 @@
 <!doctype html>
 <html lang="vi">
-<head><meta charset="utf-8"><title>Cài đặt — Lồng tiếng Việt</title><link rel="stylesheet" href="ui.css"></head>
+<head>
+  <meta charset="utf-8">
+  <meta name="color-scheme" content="light dark">
+  <title>Cài đặt — Lồng tiếng Việt</title>
+  <link rel="stylesheet" href="pico.min.css">
+  <link rel="stylesheet" href="ui.css">
+</head>
 <body class="options">
-  <h1>Cài đặt lồng tiếng Việt</h1>
-  <p class="muted">Dịch phụ đề video YouTube, Udemy, Coursera sang tiếng Việt rồi đọc lên.
-    Có key Gemini thì dịch bằng Gemini (hay hơn); không có key hoặc Gemini lỗi thì tự dùng Google Dịch.</p>
-  <section>
-    <h2>Bật lồng tiếng</h2>
-    <p class="muted">Mỗi video có nút <b>Lồng tiếng</b> ở góc phải dưới (rê chuột vào video để thấy).
-      Mặc định mọi video đều tắt: chỉ dịch và đọc khi bạn bấm nút. Video đã bật sẽ được nhớ.
-      Đang lồng tiếng thì tiếng gốc của video bị tắt hẳn; tắt lồng tiếng thì tiếng gốc trở lại.</p>
-    <label class="check"><input id="autoDub" type="checkbox"> Tự bật cho mọi video (trừ video bạn đã bấm tắt)</label>
-  </section>
-  <section>
-    <h2>Dịch</h2>
-    <label>Gemini API key (miễn phí, lấy ở aistudio.google.com/apikey — bỏ trống = dùng Google Dịch)
-      <input id="geminiKey" type="password" autocomplete="off"></label>
-    <label>Model Gemini (model cũ bị Google ngừng thì tự đổi sang bản mới nhất)<input id="geminiModel" placeholder="gemini-flash-latest"></label>
-  </section>
-  <section>
-    <h2>Giọng đọc</h2>
-    <label>Giọng
-      <span class="voicerow"><select id="voice"></select><button id="preview" type="button">▶ Nghe thử</button></span>
-    </label>
-    <p class="muted">Nam Minh / Hoài My: trên trình duyệt <b>Edge</b> có sẵn, miễn phí, không cần key.
-      Trên Chrome cần key <b>Azure Speech</b> (gói miễn phí F0 tại portal.azure.com). Không có thì tự đọc bằng giọng Google.</p>
-    <label>Azure Speech key (tuỳ chọn)<input id="azureKey" type="password" autocomplete="off"></label>
-    <label>Azure region (vùng của key, ví dụ southeastasia, eastasia, eastus)<input id="azureRegion" placeholder="southeastasia"></label>
-  </section>
-  <div class="btns">
-    <button id="save">Lưu</button>
-    <button id="test">Lưu &amp; thử dịch</button>
-    <button id="clear">Xoá cache bản dịch</button>
-  </div>
-  <p id="msg"></p>
-  <p class="muted">Key chỉ lưu trên máy này (chrome.storage.local) và chỉ gửi tới Google Gemini.</p>
+  <main class="container">
+    <header class="top">
+      <div class="brand">
+        <span class="logo">VI</span>
+        <div><strong>Cài đặt lồng tiếng Việt</strong>
+          <small>Dịch phụ đề video YouTube, Udemy, Coursera sang tiếng Việt rồi đọc lên.</small></div>
+      </div>
+    </header>
+
+    <article>
+      <header><strong>Bật lồng tiếng</strong></header>
+      <p class="muted">Mỗi video có nút <b>Lồng tiếng</b> ở góc phải dưới (rê chuột vào video để thấy).
+        Mặc định mọi video đều tắt: chỉ dịch và đọc khi bạn bấm nút. Video đã bật sẽ được nhớ.
+        Đang lồng tiếng thì tiếng gốc của video bị tắt hẳn; tắt lồng tiếng thì tiếng gốc trở lại.</p>
+      <label><input id="autoDub" type="checkbox" role="switch"> Tự bật cho mọi video (trừ video bạn đã bấm tắt)</label>
+    </article>
+
+    <article>
+      <header><strong>Dịch</strong></header>
+      <p class="muted">Có key Gemini thì dịch bằng Gemini (hay hơn); không có key hoặc Gemini lỗi thì tự dùng Google Dịch.</p>
+      <label for="geminiKey">Gemini API key <small class="muted">miễn phí, lấy ở aistudio.google.com/apikey — bỏ trống = dùng Google Dịch</small></label>
+      <input id="geminiKey" type="password" autocomplete="off">
+      <label for="geminiModel">Model Gemini <small class="muted">model cũ bị Google ngừng thì tự đổi sang bản mới nhất</small></label>
+      <input id="geminiModel" placeholder="gemini-flash-latest">
+    </article>
+
+    <article>
+      <header><strong>Giọng đọc</strong></header>
+      <label for="voice">Giọng</label>
+      <div class="voicerow" role="group">
+        <select id="voice"></select>
+        <button id="preview" type="button">▶&#xFE0E; Nghe thử</button>
+      </div>
+      <p class="muted">Nam Minh / Hoài My: trên trình duyệt <b>Edge</b> có sẵn, miễn phí, không cần key.
+        Trên Chrome cần key <b>Azure Speech</b> (gói miễn phí F0 tại portal.azure.com). Không có thì tự đọc bằng giọng Google.</p>
+      <div class="grid">
+        <div>
+          <label for="azureKey">Azure Speech key <small class="muted">tuỳ chọn</small></label>
+          <input id="azureKey" type="password" autocomplete="off">
+        </div>
+        <div>
+          <label for="azureRegion">Azure region <small class="muted">vd southeastasia</small></label>
+          <input id="azureRegion" placeholder="southeastasia">
+        </div>
+      </div>
+    </article>
+
+    <div class="btns">
+      <button id="save">Lưu</button>
+      <button id="test" class="secondary">Lưu &amp; thử dịch</button>
+      <button id="clear" class="secondary outline">Xoá cache bản dịch</button>
+    </div>
+    <p id="msg"></p>
+    <p class="muted">Key chỉ lưu trên máy này (chrome.storage.local) và chỉ gửi tới Google Gemini / Azure.</p>
+  </main>
   <script src="shared.js"></script>
   <script src="voices.js"></script>
   <script src="options.js"></script>

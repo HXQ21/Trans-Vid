@@ -1,20 +1,44 @@
 <!doctype html>
 <html lang="vi">
-<head><meta charset="utf-8"><link rel="stylesheet" href="ui.css"></head>
+<head>
+  <meta charset="utf-8">
+  <meta name="color-scheme" content="light dark">
+  <link rel="stylesheet" href="pico.min.css">
+  <link rel="stylesheet" href="ui.css">
+</head>
 <body class="popup">
-  <h1>Lồng tiếng Việt <small id="ver" class="muted"></small></h1>
-  <label class="row"><span>Bật lồng tiếng</span><input type="checkbox" id="enabled"></label>
-  <label>Giọng đọc
-    <span class="voicerow"><select id="voice"></select><button id="preview" title="Nghe thử">▶</button></span></label>
-  <p id="voiceInfo" class="muted"></p>
-  <p id="previewMsg" class="muted" hidden></p>
-  <label class="vol"><span>🔊 Âm lượng giọng đọc <b id="voiceVolumeVal"></b></span>
-    <input type="range" id="voiceVolume" min="0" max="100" step="5"></label>
-  <p id="progress" class="muted"></p>
-  <p id="engine" class="muted"></p>
-  <p id="err" class="warn" hidden></p>
-  <div class="btns"><button id="retranslate">Dịch lại</button><button id="options">Cài đặt</button><button id="diag">Chẩn đoán</button></div>
+  <header class="top">
+    <div class="brand">
+      <span class="logo">VI</span>
+      <div><strong>Lồng tiếng Việt</strong><small id="ver"></small></div>
+    </div>
+    <input type="checkbox" role="switch" id="enabled" aria-label="Bật lồng tiếng" title="Bật / tắt toàn bộ extension">
+  </header>
+
+  <article class="status">
+    <p id="progress"></p>
+    <small id="engine" class="muted"></small>
+    <p id="err" class="warn" hidden></p>
+  </article>
+
+  <label for="voice">Giọng đọc</label>
+  <div class="voicerow" role="group">
+    <select id="voice"></select>
+    <button id="preview" title="Nghe thử" aria-label="Nghe thử">▶&#xFE0E;</button>
+  </div>
+  <small id="voiceInfo" class="muted"></small>
+  <small id="previewMsg" class="muted" hidden></small>
+
+  <label class="vol" for="voiceVolume"><span>Âm lượng giọng đọc</span><b id="voiceVolumeVal"></b></label>
+  <input type="range" id="voiceVolume" min="0" max="100" step="5">
+
+  <div class="btns">
+    <button id="retranslate" class="secondary outline">Dịch lại</button>
+    <button id="options" class="secondary outline">Cài đặt</button>
+    <button id="diag" class="secondary outline">Chẩn đoán</button>
+  </div>
   <textarea id="diagOut" readonly hidden></textarea>
+
   <script src="shared.js"></script>
   <script src="voices.js"></script>
   <script src="popup.js"></script>

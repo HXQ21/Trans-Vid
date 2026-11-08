@@ -29,3 +29,5 @@ node tools/test_extension.js
 Gặp lỗi: popup → nút **Chẩn đoán** sao chép nhật ký từng bước.
 
 Ghi chú cho người phát triển (và Claude Code): xem `CLAUDE.md`.
+
+Giao diện popup / Cài đặt dùng [Pico CSS](https://picocss.com) v2.1.1 (MIT), chép sẵn trong `pico.min.css`.

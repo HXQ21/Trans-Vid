@@ -1,22 +1,66 @@
-body { font: 14px/1.4 system-ui, "Segoe UI", Roboto, sans-serif; color: #222; margin: 0; padding: 14px; }
-.popup { width: 300px; }
-.options { max-width: 620px; margin: 0 auto; padding: 24px; }
-h1 { font-size: 17px; margin: 0 0 12px; }
-h2 { font-size: 14px; margin: 18px 0 8px; color: #555; }
-label { display: flex; flex-direction: column; gap: 4px; margin: 8px 0; font-weight: 500; }
-label.row { flex-direction: row; justify-content: space-between; align-items: center; }
-label.check { flex-direction: row; align-items: center; gap: 8px; cursor: pointer; }
-input:not([type=checkbox]):not([type=range]), select { padding: 6px 8px; border: 1px solid #ccc; border-radius: 6px; font: inherit; }
-label.vol span { display: flex; justify-content: space-between; }
-.voicerow { display: flex; gap: 6px; }
-.voicerow select { flex: 1; min-width: 0; }
-.voicerow button { padding: 6px 12px; }
-label.vol b { font-weight: 600; color: #2563eb; }
-input[type=range] { width: 100%; margin: 0; accent-color: #2563eb; cursor: pointer; }
-.btns { display: flex; gap: 8px; margin-top: 14px; flex-wrap: wrap; }
-button { padding: 7px 12px; border: 0; border-radius: 6px; background: #2563eb; color: #fff; cursor: pointer; font: inherit; }
-button:hover { background: #1d4ed8; }
-.muted { color: #777; font-size: 12px; }
-.warn { color: #b91c1c; }
-.ok { color: #15803d; }
-#diagOut { width: 100%; height: 220px; margin-top: 10px; font: 11px/1.35 Consolas, monospace; box-sizing: border-box; }
+/* Giao diện popup + Cài đặt, dựng trên Pico CSS (pico.min.css, MIT). Chỉ dùng trong trang của extension. */
+
+/* Màu chủ đạo đỏ (cùng màu nút "Lồng tiếng" trên video), cỡ chữ gọn cho popup.
+   Bộ chọn :root:not([data-theme=_]) để đè cả biến của chế độ tối trong Pico. */
+:root:not([data-theme=_]) {
+  --pico-font-size: 87.5%;
+  --pico-primary: #d93526;
+  --pico-primary-background: #d93526;
+  --pico-primary-border: #d93526;
+  --pico-primary-underline: rgba(217, 53, 38, 0.5);
+  --pico-primary-hover: #c52f21;
+  --pico-primary-hover-background: #c52f21;
+  --pico-primary-hover-border: #c52f21;
+  --pico-primary-focus: rgba(217, 53, 38, 0.3);
+  --pico-primary-inverse: #fff;
+  --pico-form-element-spacing-vertical: 0.45rem;
+  --pico-form-element-spacing-horizontal: 0.7rem;
+  --pico-spacing: 0.9rem;
+  --pico-range-thumb-color: #d93526;
+  --pico-range-thumb-active-color: #c52f21;
+}
+
+.popup { width: 330px; padding: 14px 16px 16px; }
+.options { padding: 8px 0 32px; }
+.options .container { max-width: 680px; }
+
+/* Đầu trang: logo + tên + công tắc */
+.top { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
+.brand { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.brand strong { display: block; font-size: 1.05rem; line-height: 1.2; }
+.brand small { display: block; color: var(--pico-muted-color); font-size: 0.8rem; }
+.logo {
+  flex: none; display: inline-grid; place-items: center; width: 34px; height: 34px; border-radius: 9px;
+  background: var(--pico-primary-background); color: #fff; font-weight: 800; font-size: 0.85rem; letter-spacing: 0.5px;
+}
+.top input[role=switch] { margin: 0; flex: none; }
+
+/* Ô trạng thái */
+.status { margin: 0 0 14px; padding: 10px 12px; }
+.status p { margin: 0; }
+.status small { display: block; margin-top: 4px; }
+.status .warn { margin-top: 6px; }
+
+/* Giọng đọc: chọn giọng + nút nghe thử dính liền */
+.voicerow { margin-bottom: 4px; }
+.voicerow select { min-width: 0; }
+.voicerow button { flex: 0 0 auto; padding-inline: 1rem; }
+.popup .voicerow button { width: 3rem; padding-inline: 0; }
+
+/* Âm lượng */
+label.vol { display: flex; justify-content: space-between; align-items: baseline; margin-top: 10px; }
+label.vol b { color: var(--pico-primary); font-weight: 600; }
+input[type=range] { margin-bottom: 6px; }
+
+.muted { display: block; color: var(--pico-muted-color); font-size: 0.8rem; }
+label .muted { display: inline; margin-left: 4px; }
+.warn { color: var(--pico-del-color); }
+.ok { color: var(--pico-ins-color); }
+
+/* Hàng nút */
+.btns { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+.popup .btns button { flex: 1; padding: 0.4rem 0.5rem; font-size: 0.85rem; margin: 0; }
+.options .btns button { margin: 0; }
+
+#diagOut { height: 220px; margin-top: 10px; font: 11px/1.35 Consolas, monospace; }
+article > header { margin-bottom: var(--pico-spacing); }
