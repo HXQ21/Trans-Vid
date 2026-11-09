@@ -53,7 +53,7 @@ function fakePage({ pageV = 'MAIN', ccPressed = 'false', voice = 'auto', geminiK
     chrome: {
       runtime: { getManifest: () => ({ version: 'test' }), onMessage: { addListener(f) { msgListener = f; } }, lastError: null,
         sendMessage(m, cb) { sent.push(m); setTimeout(() => cb(m.type === 'translate' ? { ok: true, via: viaFn(m), translations: m.lines.map(l => (viaFn(m) === 'gemini' ? 'GEM ' : 'VI ') + l) } : { ok: true, engine: 'google', audio: btoa('x'), mime: 'audio/mpeg' }), 2); } },
-      storage: { local: { get(d, cb) { if (typeof d === 'string') return Promise.resolve(cache && d.startsWith('cache:') ? { [d]: cache } : {}); const o = { ...d, voice, geminiKey, autoDub, ...store }; if (cb) cb(o); else return Promise.resolve(o); }, set: o => { Object.assign(store, o); return Promise.resolve(); } }, onChanged: { addListener(f) { changeL.push(f); } } }
+      storage: { local: { get(d, cb) { if (typeof d === 'string') return Promise.resolve(cache && d.startsWith('cache:') ? { [d]: cache } : (d in store ? { [d]: store[d] } : {})); const o = { ...d, voice, geminiKey, autoDub, ...store }; if (cb) cb(o); else return Promise.resolve(o); }, set: o => { Object.assign(store, o); return Promise.resolve(); }, remove: k => { [].concat(k).forEach(x => delete store[x]); return Promise.resolve(); } }, onChanged: { addListener(f) { changeL.push(f); } } }
     },
     Audio: function () { const a = { play() { return Promise.resolve(); }, pause() {} }; return a; }
   };
@@ -810,6 +810,101 @@ function fakePage({ pageV = 'MAIN', ccPressed = 'false', voice = 'auto', geminiK
     P.video.currentTime = 3.2; P.video.fire('timeupdate');
     await sleep(300);
     check('tab ẩn: tới câu thứ hai -> đọc tiếp', said().some(t => /second/.test(t)), said());
+  }
+
+  console.log('39. Hết giờ phải phủ cả lúc đọc body (header về rồi body treo)');
+  {
+    const resp = (status, body) => ({ ok: status < 300, status, json: async () => body, text: async () => JSON.stringify(body) });
+    const ctx = { console, setTimeout, clearTimeout, AbortController, btoa, atob, URL, encodeURIComponent, decodeURIComponent, Uint8Array, DataView, String, JSON, Math, Promise, Error, Object, Array, Date, parseFloat, __bsubGeminiTimeoutMs: 300 };
+    ctx.fetch = (url, init = {}) => {
+      if (url.includes('/chat/completions')) {
+        // header về ngay, nhưng body chỉ kết thúc khi bị huỷ
+        return Promise.resolve({ ok: true, status: 200, text: async () => '',
+          json: () => new Promise((_, rej) => { if (init.signal) init.signal.addEventListener('abort', () => rej(Object.assign(new Error('aborted'), { name: 'AbortError' }))); }) });
+      }
+      const q = decodeURIComponent(url.split('&q=')[1] || '');
+      return Promise.resolve(resp(200, [[[q.split('\n').map(l => 'VI ' + l).join('\n')]]]));
+    };
+    ctx.chrome = { runtime: { onInstalled: { addListener() {} }, onMessage: { addListener(f) { ctx.handler = f; } } },
+      storage: { local: { get(d, cb) { cb({ ...d, geminiKey: 'K' }); }, set: () => Promise.resolve() } } };
+    ctx.importScripts = f => vm.runInContext(fs.readFileSync(path.join(DIR, f), 'utf8'), ctx);
+    vm.createContext(ctx);
+    vm.runInContext(fs.readFileSync(path.join(DIR, 'background.js'), 'utf8'), ctx);
+    const t0 = Date.now();
+    const r = await Promise.race([new Promise(res => ctx.handler({ type: 'translate', lang: 'en', lines: ['Hi.'] }, {}, res)), sleep(5000).then(() => null)]);
+    check('body treo: không kẹt, dùng Google', r && r.ok && r.translations[0] === 'VI Hi.', r);
+    check('body treo: trả về nhanh (< 3 giây)', Date.now() - t0 < 3000, Date.now() - t0);
+  }
+
+  console.log('40. Lỗi 400 chỉ khoá Gemini khi nói về key; 400 khác chỉ ảnh hưởng lô đó');
+  {
+    const mk = errMsg => {
+      const calls = { gemini: 0 };
+      const resp = (status, body) => ({ ok: status < 300, status, json: async () => body, text: async () => JSON.stringify(body) });
+      const ctx = { console, setTimeout, clearTimeout, AbortController, btoa, atob, URL, encodeURIComponent, decodeURIComponent, Uint8Array, DataView, String, JSON, Math, Promise, Error, Object, Array, Date, parseFloat };
+      ctx.fetch = async url => {
+        if (url.includes('/chat/completions')) { calls.gemini++; return resp(400, { error: { code: 400, message: errMsg } }); }
+        const q = decodeURIComponent(url.split('&q=')[1] || '');
+        return resp(200, [[[q.split('\n').map(l => 'VI ' + l).join('\n')]]]);
+      };
+      ctx.chrome = { runtime: { onInstalled: { addListener() {} }, onMessage: { addListener(f) { ctx.handler = f; } } },
+        storage: { local: { get(d, cb) { cb({ ...d, geminiKey: 'K' }); }, set: () => Promise.resolve() } } };
+      ctx.importScripts = f => vm.runInContext(fs.readFileSync(path.join(DIR, f), 'utf8'), ctx);
+      vm.createContext(ctx);
+      vm.runInContext(fs.readFileSync(path.join(DIR, 'background.js'), 'utf8'), ctx);
+      return { calls, call: m => new Promise(r => ctx.handler(m, {}, r)) };
+    };
+    const A = mk('Request contains an invalid argument.');
+    await A.call({ type: 'translate', lang: 'en', lines: ['Hello.'] });
+    const a1 = A.calls.gemini;
+    const ra = await A.call({ type: 'translate', lang: 'en', lines: ['World.'] });
+    check('400 không liên quan key: lô sau vẫn thử Gemini', A.calls.gemini > a1, { before: a1, after: A.calls.gemini });
+    check('400 không liên quan key: vẫn dịch được (Google)', ra.ok && ra.translations[0] === 'VI World.', ra);
+    const B = mk('API key not valid. Please pass a valid API key.');
+    await B.call({ type: 'translate', lang: 'en', lines: ['Hello.'] });
+    const b1 = B.calls.gemini;
+    await B.call({ type: 'translate', lang: 'en', lines: ['World.'] });
+    check('400 do key sai: lô sau KHÔNG gọi Gemini nữa', B.calls.gemini === b1, { before: b1, after: B.calls.gemini });
+    const C = mk('max_tokens is too large: 99999. This model supports at most 8192 completion tokens.');
+    await C.call({ type: 'translate', lang: 'en', lines: ['Hello.'] });
+    const c1 = C.calls.gemini;
+    await C.call({ type: 'translate', lang: 'en', lines: ['World.'] });
+    check('400 nhắc "tokens" (không phải key): không khoá', C.calls.gemini > c1, { before: c1, after: C.calls.gemini });
+  }
+
+  console.log('41. Cache dịch gắn phiên bản prompt');
+  {
+    check('shared.js có BSUB_PROMPT_VERSION', /BSUB_PROMPT_VERSION\s*=\s*\d+/.test(fs.readFileSync(path.join(DIR, 'lib/shared.js'), 'utf8')));
+    const P = fakePage({ pageV: 'MAIN', ccPressed: 'true', geminiKey: 'K', viaFn: () => 'gemini' });
+    await sleep(20);
+    P.postCaptions('MAIN', ['This is the first line here.']);
+    await sleep(1900);
+    const ids1 = Object.keys(P.store).filter(k => k.startsWith('cache:'));
+    check('có ghi cache', ids1.length === 1, ids1);
+    const code = fs.readFileSync(path.join(DIR, 'content/content.js'), 'utf8');
+    check('khoá cache dùng BSUB_PROMPT_VERSION', /cacheId\s*=.*BSUB_PROMPT_VERSION/.test(code));
+    // Khoá cũ là hash('v5|' + cueKey + ...): bản này không được làm mất cache đã có.
+    check('giữ nguyên khoá cache cũ (v5) để không dịch lại', vm.runInContext('typeof BSUB_PROMPT_VERSION !== "undefined" && BSUB_PROMPT_VERSION', P.ctx) === 5 && /hash\('v' \+ BSUB_PROMPT_VERSION \+ '\|' \+ cueKey/.test(code));
+  }
+
+  console.log('42. Dọn cache: quá hạn (TTL) và vượt giới hạn (LRU)');
+  {
+    const DAY = 864e5, now = Date.now(), store = { cacheIndex: {} };
+    const put = (id, age) => { store['cache:' + id] = [{ t: 'x', via: 'google' }]; if (age !== null) store.cacheIndex['cache:' + id] = now - age; };
+    put('old', 40 * DAY);            // quá 30 ngày
+    put('legacy', null);             // bản cũ chưa có chỉ mục -> coi như vừa dùng
+    for (let i = 0; i < 205; i++) put('l' + i, (i + 1) * 60000);   // trong hạn, i nhỏ = mới hơn
+    const P = fakePage({ pageV: 'MAIN', ccPressed: 'true', store });
+    await sleep(20);
+    P.postCaptions('MAIN', ['This is the first line here.']);
+    await sleep(2400);
+    const ids = Object.keys(store).filter(k => k.startsWith('cache:'));
+    check('bản quá 30 ngày bị xoá', !('cache:old' in store));
+    check('tổng số cache <= 200', ids.length <= 200, ids.length);
+    check('bản mới dùng gần đây còn', 'cache:l0' in store);
+    check('bản lâu chưa dùng nhất bị xoá (LRU)', !('cache:l204' in store));
+    check('bản cũ chưa có chỉ mục không bị xoá oan', 'cache:legacy' in store);
+    check('cache của video đang xem còn', ids.some(k => !/^cache:(l\d+|old|legacy)$/.test(k)), ids.length);
   }
 
   console.log('\n' + pass + ' đạt, ' + fail + ' lỗi');

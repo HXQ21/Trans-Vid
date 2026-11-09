@@ -18,13 +18,15 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
 const GEMINI_URL = 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions';
 
 // timeoutMs: quá hạn thì huỷ yêu cầu (AbortController) để không treo cả lô dịch.
-async function request(url, init, tries = 3, timeoutMs = 0) {
+// read: hàm đọc body (vd r => r.json()); có thì hẹn giờ phủ cả lúc đọc body, trả về kết quả của read.
+async function request(url, init, tries = 3, timeoutMs = 0, read = null) {
   for (let i = 0; ; i++) {
     let res;
     const ac = timeoutMs ? new AbortController() : null;
     const timer = ac ? setTimeout(() => ac.abort(), timeoutMs) : 0;
     try {
       res = await fetch(url, ac ? { ...init, signal: ac.signal } : init);
+      if (res.ok && read) return await read(res);
     } catch (e) {
       if (ac && ac.signal.aborted) throw Object.assign(new Error('quá ' + Math.round(timeoutMs / 1000) + ' giây không phản hồi'), { status: 'timeout' });
       throw e;
@@ -55,7 +57,9 @@ const geminiTimeout = () => globalThis.__bsubGeminiTimeoutMs || 15000;
 let geminiPausedUntil = 0, geminiPauseReason = '';
 function pauseGemini(e) {
   const st = e && e.status;
-  const min = st === 429 ? 10 : (st === 400 || st === 401 || st === 403) ? 30 : 0;
+  // 400 chỉ khoá khi lỗi nói về key; 400 khác (nội dung lô, tham số) chỉ hỏng lô đó, không khoá cả Gemini.
+  const keyBad = st === 401 || st === 403 || (st === 400 && /api[ _-]?key|invalid[ _-]?(access[ _-]?|auth[ _-]?)?token|token\b[^.]{0,20}\b(invalid|expired)/i.test(String((e && e.message) || '')));
+  const min = st === 429 ? 10 : keyBad ? 30 : 0;
   if (!min) return;
   geminiPausedUntil = Date.now() + min * 60000;
   geminiPauseReason = st === 429 ? 'hết lượt (429)' : 'bị từ chối (' + st + ')';
@@ -71,10 +75,10 @@ const noEffort = {};               // model không nhận reasoning_effort
 async function listFlashModels(key) {
   if (modelListCache) return modelListCache;
   try {
-    const res = await request('https://generativelanguage.googleapis.com/v1beta/models?pageSize=1000', {
+    const data = await request('https://generativelanguage.googleapis.com/v1beta/models?pageSize=1000', {
       headers: { 'x-goog-api-key': key }
-    }, 1, geminiTimeout());
-    const names = ((await res.json()).models || [])
+    }, 1, geminiTimeout(), r => r.json());
+    const names = (data.models || [])
       .filter(m => (m.supportedGenerationMethods || []).includes('generateContent'))
       .map(m => String(m.name || '').replace(/^models\//, ''))
       .filter(n => /^gemini-([\d.]+-)?flash(-lite)?(-latest|-preview(-[\d-]+)?)?$/.test(n));
@@ -96,7 +100,7 @@ async function geminiChat(cfg, system, user) {
     .filter(n => !(modelBlockedUntil[n] > now));
   let lastErr = Object.assign(new Error('mọi model Gemini của key này đều đang hết quota'), { status: 429 });
   for (const model of tryList) {
-    let res;
+    let data;
     // Model flash mặc định "suy nghĩ" lâu (đo thực tế: 7.9s -> 1.7s với effort "low").
     // Model nào không nhận tham số này (400) thì gửi lại không có nó.
     const send = withEffort => request(GEMINI_URL, {
@@ -107,14 +111,14 @@ async function geminiChat(cfg, system, user) {
         ...(withEffort ? { reasoning_effort: 'low' } : {}),
         messages: [{ role: 'system', content: system }, { role: 'user', content: user }]
       })
-    }, 1, geminiTimeout());
+    }, 1, geminiTimeout(), r => r.json());
     try {
       try {
-        res = await send(!noEffort[model]);
+        data = await send(!noEffort[model]);
       } catch (e) {
         if (e.status !== 400 || noEffort[model]) throw e;
         noEffort[model] = true;
-        res = await send(false);
+        data = await send(false);
       }
     } catch (e) {
       // Hết lượt / ngừng: chặn model này rồi thử model kế tiếp. Lỗi khác (quá giờ, key sai): dừng.
@@ -127,7 +131,6 @@ async function geminiChat(cfg, system, user) {
       throw e;
     }
     lastGeminiModel = model;
-    const data = await res.json();
     const m = data.choices && data.choices[0] && data.choices[0].message;
     return (m && m.content) || '';
   }
@@ -138,13 +141,12 @@ async function geminiChat(cfg, system, user) {
 async function rentedChat(cfg, system, user) {
   const url = String(cfg.apiBase).trim().replace(/\/+$/, '') + '/chat/completions';
   const model = String(cfg.apiModel).trim();
-  const res = await request(url, {
+  const data = await request(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + String(cfg.apiKey).trim() },
     body: JSON.stringify({ model, messages: [{ role: 'system', content: system }, { role: 'user', content: user }] })
-  }, 2, rentedTimeout());
+  }, 2, rentedTimeout(), r => r.json());
   lastGeminiModel = model;
-  const data = await res.json();
   const m = data.choices && data.choices[0] && data.choices[0].message;
   return (m && m.content) || '';
 }

@@ -400,7 +400,28 @@
     return (h >>> 0).toString(36) + '_' + s.length;
   }
   // 'v4': cache ghi kèm engine đã dịch mỗi câu (bản v3 trộn lẫn câu Google dự phòng vào cache Gemini).
-  const cacheId = () => 'cache:' + hash('v5|' + cueKey + '|vi|' + bsubAiId(cfg));
+  const cacheId = () => 'cache:' + hash('v' + BSUB_PROMPT_VERSION + '|' + cueKey + '|vi|' + bsubAiId(cfg));
+
+  // Chỉ mục 'cacheIndex' { id: lần dùng gần nhất }: xoá cache quá 30 ngày (TTL), giữ tối đa 200 video (LRU).
+  const CACHE_TTL = 30 * 864e5, CACHE_MAX = 200;
+  let pruned = false;
+  async function touchCache(id) {
+    const o = await chrome.storage.local.get('cacheIndex');
+    const idx = o.cacheIndex || {};
+    idx[id] = Date.now();
+    await chrome.storage.local.set({ cacheIndex: idx });
+  }
+  async function pruneCache(keep) {
+    const all = await chrome.storage.local.get(null);
+    const idx = all.cacheIndex || {}, now = Date.now();
+    const ids = Object.keys(all).filter(k => k.startsWith('cache:'));
+    ids.forEach(k => { if (!(idx[k] > 0)) idx[k] = now; });            // bản cũ chưa có chỉ mục: coi như vừa dùng
+    Object.keys(idx).forEach(k => { if (!ids.includes(k)) delete idx[k]; });
+    const drop = ids.sort((a, b) => idx[b] - idx[a]).filter((k, i) => k !== keep && (now - idx[k] > CACHE_TTL || i >= CACHE_MAX));
+    drop.forEach(k => delete idx[k]);
+    if (drop.length) await chrome.storage.local.remove(drop);
+    await chrome.storage.local.set({ cacheIndex: idx });
+  }
 
   async function loadCache() {
     if (!cueKey) return;
@@ -408,6 +429,7 @@
     const o = await chrome.storage.local.get(id).catch(() => ({}));
     const arr = o[id];
     if (key !== cueKey || !Array.isArray(arr) || arr.length !== cues.length) return;
+    touchCache(id).catch(() => {});   // vừa dùng lại: cập nhật để không bị dọn
     // Mỗi câu lưu kèm engine đã dịch. Có key Gemini thì bỏ qua câu do Google dịch (dự phòng lúc Gemini lỗi)
     // để Gemini dịch lại, nếu không bản Google sẽ bị dùng mãi.
     let used = 0;
@@ -422,7 +444,13 @@
   function saveCacheSoon() {
     clearTimeout(saveTimer);
     const id = cacheId(), data = cues.map(c => (c.tr ? { t: c.tr, via: c.via || '' } : null));
-    saveTimer = setTimeout(() => chrome.storage.local.set({ [id]: data }).catch(() => {}), 1500);
+    saveTimer = setTimeout(async () => {
+      try {
+        await chrome.storage.local.set({ [id]: data });
+        await touchCache(id);
+        if (!pruned) { pruned = true; await pruneCache(id); }
+      } catch (e) {}
+    }, 1500);
   }
 
   // ---- Vòng lặp theo dõi video ----
