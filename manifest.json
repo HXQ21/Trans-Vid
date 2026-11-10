@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "TransVid",
-  "version": "3.2.6",
+  "version": "3.2.7",
   "description": "Lồng tiếng Việt cho video YouTube, Udemy, Coursera: đọc thẳng phụ đề Việt nếu có, không thì dịch bằng Gemini (hoặc Google Dịch).",
   "permissions": [
     "storage",
@@ -18,6 +18,16 @@
   ],
   "optional_host_permissions": [
     "https://*/*"
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": ["icons/icon128.png"],
+      "matches": [
+        "*://*.youtube.com/*",
+        "*://*.udemy.com/*",
+        "*://*.coursera.org/*"
+      ]
+    }
   ],
   "background": {
     "service_worker": "background.js"

@@ -907,6 +907,20 @@ function fakePage({ pageV = 'MAIN', ccPressed = 'false', voice = 'auto', geminiK
     check('cache của video đang xem còn', ids.some(k => !/^cache:(l\d+|old|legacy)$/.test(k)), ids.length);
   }
 
+  console.log('43. Nút trên video dùng logo của extension');
+  {
+    const mf = JSON.parse(fs.readFileSync(path.join(DIR, 'manifest.json'), 'utf8'));
+    const css = fs.readFileSync(path.join(DIR, 'content/content.css'), 'utf8');
+    const m = /url\(["']?chrome-extension:\/\/__MSG_@@extension_id__\/(icons\/[\w.]+)["']?\)/.exec(css);
+    check('CSS nút dùng ảnh logo trong icons/', !!m, m);
+    check('logo được khai trong web_accessible_resources', !!m && (mf.web_accessible_resources || []).some(w => w.resources.includes(m[1]) && w.matches.some(x => /youtube/.test(x)) && w.matches.some(x => /udemy/.test(x)) && w.matches.some(x => /coursera/.test(x))), mf.web_accessible_resources);
+    check('file logo có thật', !!m && fs.existsSync(path.join(DIR, m[1])));
+    check('không còn chữ "VI" làm biểu tượng', !/content:\s*"VI"/.test(css));
+    const P = fakePage({ ccPressed: 'false', autoDub: false });
+    await sleep(700);
+    check('nút vẫn ghi trạng thái (cho trình đọc màn hình)', P.btn() && /tắt/i.test(P.btn().textContent), P.btn() && P.btn().textContent);
+  }
+
   console.log('\n' + pass + ' đạt, ' + fail + ' lỗi');
   process.exit(fail ? 1 : 0);
 })();

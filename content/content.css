@@ -2,21 +2,24 @@
 html.bsub-hide-native .ytp-caption-window-container { display: none !important; }
 
 /* Nút "Lồng tiếng" ở góc phải dưới video, hiện khi rê chuột vào video (giống thanh điều khiển). */
+/* Chỉ hiện logo; rê chuột vào thì mở rộng ra chữ trạng thái. Chữ vẫn nằm trong nút (font-size 0) cho trình đọc màn hình. */
 .bsub-host > .bsub-btn {
   position: absolute; right: 12px; bottom: 64px; z-index: 70;
-  display: inline-flex; align-items: center; gap: 6px;
-  padding: 6px 12px; margin: 0; border: 0; border-radius: 16px;
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 4px; margin: 0; border: 0; border-radius: 16px;
   background: rgba(28, 28, 28, 0.85); color: #fff;
-  font: 500 13px/1.2 Roboto, Arial, sans-serif; letter-spacing: normal; text-transform: none;
+  font: 500 0/1.2 Roboto, Arial, sans-serif; letter-spacing: normal; text-transform: none;
   cursor: pointer; opacity: 0; transition: opacity 0.2s, background 0.2s; pointer-events: auto;
 }
 .bsub-host > .bsub-btn::before {
-  content: "VI"; font-weight: 700; font-size: 11px; padding: 1px 4px;
-  border: 1px solid currentColor; border-radius: 3px;
+  content: ""; flex: none; width: 32px; height: 32px; border-radius: 8px;
+  background: url("chrome-extension://__MSG_@@extension_id__/icons/icon128.png") center / contain no-repeat;
+  filter: grayscale(1) opacity(0.75);
 }
 .bsub-host:hover > .bsub-btn, .bsub-host > .bsub-btn:focus-visible { opacity: 1; }
-.bsub-host > .bsub-btn:hover { background: rgba(60, 60, 60, 0.95); }
-.bsub-host > .bsub-btn.bsub-on { background: linear-gradient(135deg, rgba(37, 75, 255, 0.95), rgba(124, 31, 232, 0.95)); }
-.bsub-host > .bsub-btn.bsub-on:hover { background: linear-gradient(135deg, #3d63ff, #8f3cf0); }
+.bsub-host > .bsub-btn:hover { background: rgba(60, 60, 60, 0.95); font-size: 13px; padding-right: 12px; }
+.bsub-host > .bsub-btn.bsub-on { background: rgba(28, 28, 28, 0.85); box-shadow: 0 0 0 2px #7c1fe8; }
+.bsub-host > .bsub-btn.bsub-on::before { filter: none; }
+.bsub-host > .bsub-btn.bsub-on:hover { background: rgba(60, 60, 60, 0.95); }
 /* YouTube ẩn thanh điều khiển khi chuột đứng yên: ẩn nút theo. */
 .html5-video-player.ytp-autohide > .bsub-btn:not(:hover) { opacity: 0; }
