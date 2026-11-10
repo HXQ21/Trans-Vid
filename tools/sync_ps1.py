@@ -33,7 +33,7 @@ for base, dirs, names in os.walk(d):
 files.sort(key=lambda r: (r != 'manifest.json', r.count('/'), r))
 
 header = '\n'.join([
-    '# Tao extension "TransVid" (long tieng Viet cho YouTube / Udemy / Coursera) - Chrome/Edge Manifest V3',
+    '# Tao extension "TransVid" (long tieng Viet cho YouTube / Udemy / Coursera / DeepLearning.AI) - Chrome/Edge Manifest V3',
     '# Chay:  powershell -ExecutionPolicy Bypass -Command "Get-Content -Raw -Encoding UTF8 \'D:\\AI repo\\craf\\tao-transvid.ps1.txt\' | iex"',
     root_line,
     'New-Item -ItemType Directory -Force -Path $root | Out-Null',

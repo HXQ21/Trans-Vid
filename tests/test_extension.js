@@ -9,12 +9,12 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
 function loadShared() {
   const ctx = { console, chrome: { storage: { local: { get() {} } } } };
   vm.createContext(ctx);
-  vm.runInContext(fs.readFileSync(path.join(DIR, 'lib/shared.js'), 'utf8') + '\n;this.S = {}; for (const n of ["bsubCleanSource", "bsubSpeakable", "bsubSourceLang", "bsubIsVi", "bsubIsAutoLabel", "bsubPickCaption", "bsubParseVtt", "bsubLangName", "bsubSegmentSentences", "bsubAiOn", "bsubAiId", "bsubNeededOrigins"]) { try { this.S[n] = eval(n); } catch (e) { this.S[n] = null; } }', ctx);
+  vm.runInContext(fs.readFileSync(path.join(DIR, 'lib/shared.js'), 'utf8') + '\n;this.S = {}; for (const n of ["bsubCleanSource", "bsubSpeakable", "bsubSourceLang", "bsubIsVi", "bsubIsAutoLabel", "bsubPickCaption", "bsubParseVtt", "bsubLangName", "bsubSegmentSentences", "bsubAiOn", "bsubAiId", "bsubNeededOrigins", "bsubParseHlsSubs", "bsubHlsSegments"]) { try { this.S[n] = eval(n); } catch (e) { this.S[n] = null; } }', ctx);
   return ctx.S;
 }
 
 // Trang YouTube giả: video, nút CC, chrome.* giả; chạy shared.js + content.js thật.
-function fakePage({ pageV = 'MAIN', ccPressed = 'false', voice = 'auto', geminiKey = '', cache = null, viaFn = () => 'google', site = 'youtube', tracks = [], files = {}, autoDub = true, store = {}, hiddenTab = false } = {}) {
+function fakePage({ pageV = 'MAIN', ccPressed = 'false', voice = 'auto', geminiKey = '', cache = null, viaFn = () => 'google', site = 'youtube', tracks = [], files = {}, autoDub = true, store = {}, hiddenTab = false, videoSrc = '' } = {}) {
   let msgListener = null; const winL = {}; const changeL = [];
   const trackEls = tracks.map(t => ({ srclang: t.lang, label: t.label, getAttribute: k => (k === 'src' ? t.src : null) }));
   // Phần tử DOM giả tối thiểu (cho nút bật lồng tiếng trên video).
@@ -33,9 +33,9 @@ function fakePage({ pageV = 'MAIN', ccPressed = 'false', voice = 'auto', geminiK
     return e;
   };
   const player = mkEl();
-  const video = { currentTime: 0, paused: false, volume: 1, muted: false, vl: {}, addEventListener(t, f) { (this.vl[t] = this.vl[t] || []).push(f); }, fire(t) { (this.vl[t] || []).forEach(f => f({ target: this })); }, querySelectorAll: s => (s === 'track' ? trackEls : []), getBoundingClientRect: () => ({ width: 640, height: 360 }), parentElement: player, closest: () => player };
+  const video = { currentTime: 0, currentSrc: videoSrc, paused: false, volume: 1, muted: false, vl: {}, addEventListener(t, f) { (this.vl[t] = this.vl[t] || []).push(f); }, fire(t) { (this.vl[t] || []).forEach(f => f({ target: this })); }, querySelectorAll: s => (s === 'track' ? trackEls : []), getBoundingClientRect: () => ({ width: 640, height: 360 }), parentElement: player, closest: () => player };
   const fetched = [];
-  const HOST = { youtube: 'www.youtube.com', udemy: 'www.udemy.com', coursera: 'www.coursera.org' }[site];
+  const HOST = { youtube: 'www.youtube.com', udemy: 'www.udemy.com', coursera: 'www.coursera.org', dlai: 'learn.deeplearning.ai' }[site];
   const loc = site === 'youtube' ? { href: 'https://www.youtube.com/watch?v=' + pageV, search: '?v=' + pageV, pathname: '/watch' }
     : { href: 'https://' + HOST + '/learn/x/lecture/' + pageV, search: '', pathname: '/learn/x/lecture/' + pageV };
   const ccBtn = { clicks: 0, attrs: { 'aria-pressed': ccPressed }, getAttribute(k) { return this.attrs[k]; }, click() { this.clicks++; this.attrs['aria-pressed'] = this.attrs['aria-pressed'] === 'true' ? 'false' : 'true'; } };
@@ -919,6 +919,53 @@ function fakePage({ pageV = 'MAIN', ccPressed = 'false', voice = 'auto', geminiK
     const P = fakePage({ ccPressed: 'false', autoDub: false });
     await sleep(700);
     check('nút vẫn ghi trạng thái (cho trình đọc màn hình)', P.btn() && /tắt/i.test(P.btn().textContent), P.btn() && P.btn().textContent);
+  }
+
+  console.log('44. learn.deeplearning.ai: lấy phụ đề WebVTT từ danh sách HLS (.m3u8) của video');
+  {
+    const BASE = 'https://video.deeplearning.ai/upv2/course-x/L0/';
+    const MASTER = BASE + 'abc-master.m3u8?v=1';
+    const master = '#EXTM3U\n#EXT-X-VERSION:6\n\n'
+      + '#EXT-X-MEDIA:TYPE=SUBTITLES,GROUP-ID="subs",NAME="Deutsch",LANGUAGE="de-DE",URI="subtitle/deu/abc-deu.m3u8"\n\n'
+      + '#EXT-X-MEDIA:TYPE=SUBTITLES,GROUP-ID="subs",NAME="English",LANGUAGE="en-Us",URI="subtitle/eng/abc-eng.m3u8"\n\n'
+      + '#EXT-X-MEDIA:TYPE=SUBTITLES,GROUP-ID="subs",NAME="简体中文",LANGUAGE="zh-CN",URI="subtitle/zhs/abc-zhs.m3u8"\n\n'
+      + '#EXT-X-STREAM-INF:BANDWIDTH=5605600,RESOLUTION=1920x1080,SUBTITLES="subs"\nabc/video/1080/abc.m3u8\n';
+    const S3 = loadShared();
+    const subs = S3.bsubParseHlsSubs ? S3.bsubParseHlsSubs(master, MASTER) : [];
+    check('có hàm bsubParseHlsSubs', !!S3.bsubParseHlsSubs);
+    check('đọc đủ 3 track phụ đề', subs.length === 3, subs);
+    const en = subs.find(t => t.label === 'English');
+    check('track English: đúng ngôn ngữ + đường dẫn đầy đủ', en && en.lang === 'en-Us' && en.src === BASE + 'subtitle/eng/abc-eng.m3u8', en);
+    const pl = '#EXTM3U\n#EXT-X-TARGETDURATION:185\n#EXTINF:185.0,\nabc-eng.vtt\n#EXT-X-ENDLIST';
+    const segs = S3.bsubHlsSegments ? S3.bsubHlsSegments(pl, BASE + 'subtitle/eng/abc-eng.m3u8') : [];
+    check('playlist -> đường dẫn tệp .vtt', segs.length === 1 && segs[0] === BASE + 'subtitle/eng/abc-eng.vtt', segs);
+
+    const vtt = 'WEBVTT\nX-TIMESTAMP-MAP=LOCAL:00:00:00.000,MPEGTS:127826\n\n1\n00:00:00.133 --> 00:00:03.136\nWelcome to AI Python for Beginners.\n\n2\n00:00:03.169 --> 00:00:06.139\nWhatever your job role is, I am glad you are here.\n';
+    const files = { [MASTER]: master, [BASE + 'subtitle/eng/abc-eng.m3u8']: pl, [BASE + 'subtitle/eng/abc-eng.vtt']: vtt };
+    const P = fakePage({ site: 'dlai', pageV: 'courses/x/lesson/1', videoSrc: MASTER, files });
+    await sleep(1500);
+    const tr = P.sent.filter(m => m.type === 'translate');
+    check('dịch phụ đề tiếng Anh', tr.length && /Welcome to AI Python/.test(tr[0].lines.join(' ')) && /^en/.test(tr[0].lang), tr.map(m => [m.lang, m.lines]));
+    check('chỉ tải track English, không tải track khác', !P.fetched.some(u => /deu|zhs/.test(u)), P.fetched);
+
+    // Playlist chia nhiều đoạn .vtt: ghép đủ cả các đoạn.
+    const pl2 = '#EXTM3U\n#EXTINF:10.0,\nseg0.vtt\n#EXTINF:10.0,\nseg1.vtt\n#EXT-X-ENDLIST';
+    const M2 = BASE + 'two-master.m3u8';
+    const files2 = {
+      [M2]: master.replace(/abc-eng\.m3u8/, 'two-eng.m3u8'),
+      [BASE + 'subtitle/eng/two-eng.m3u8']: pl2,
+      [BASE + 'subtitle/eng/seg0.vtt']: 'WEBVTT\n\n00:00:01.000 --> 00:00:04.000\nThis is the first segment here.\n',
+      [BASE + 'subtitle/eng/seg1.vtt']: 'WEBVTT\n\n00:00:11.000 --> 00:00:14.000\nThis is the second segment here.\n'
+    };
+    const Q = fakePage({ site: 'dlai', pageV: 'courses/x/lesson/2', videoSrc: M2, files: files2 });
+    await sleep(1500);
+    const all = Q.sent.filter(m => m.type === 'translate').flatMap(m => m.lines).join(' ');
+    check('playlist nhiều đoạn: có cả 2 đoạn', /first segment/.test(all) && /second segment/.test(all), all);
+
+    const mf = JSON.parse(fs.readFileSync(path.join(DIR, 'manifest.json'), 'utf8'));
+    check('manifest chạy content script trên learn.deeplearning.ai', mf.content_scripts.some(c => c.js.includes('content/content.js') && c.matches.some(x => /deeplearning\.ai/.test(x))));
+    check('logo dùng được trên learn.deeplearning.ai', mf.web_accessible_resources.some(w => w.matches.some(x => /deeplearning\.ai/.test(x))));
+    check('popup nhận trang learn.deeplearning.ai', /deeplearning/.test(fs.readFileSync(path.join(DIR, 'popup/popup.js'), 'utf8')));
   }
 
   console.log('\n' + pass + ' đạt, ' + fail + ' lỗi');

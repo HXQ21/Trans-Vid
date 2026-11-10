@@ -8,6 +8,7 @@
   const IS_YT = /(^|\.)youtube\.com$/.test(HOST);
   const IS_UDEMY = /(^|\.)udemy\.com$/.test(HOST);
   const IS_COURSERA = /(^|\.)coursera\.org$/.test(HOST);
+  const IS_DLAI = /(^|\.)deeplearning\.ai$/.test(HOST);
 
   // Nhật ký chẩn đoán (150 dòng gần nhất), popup lấy qua tin nhắn 'diag'.
   const diag = [];
@@ -515,6 +516,36 @@
     }).catch(err => { D('  -> tải phụ đề lỗi: ' + err.message); trackLoading = ''; });
   }
 
+  // ---- learn.deeplearning.ai: video HLS; phụ đề là track WebVTT trong danh sách .m3u8 (không có tiếng Việt) ----
+  function scanHls() {
+    if (!IS_DLAI || !video || Date.now() - lastScan < 1000) return;
+    const src = video.currentSrc || video.src || '';
+    if (!/\.m3u8(\?|$)/i.test(src)) return;
+    lastScan = Date.now();
+    const key = 'hls|' + src.split('?')[0];
+    if (key === cueKey || key === trackLoading) return;
+    trackLoading = key;
+    const get = u => fetch(u).then(r => (r.ok ? r.text() : Promise.reject(new Error('HTTP ' + r.status + ' ' + u.split('?')[0].split('/').pop()))));
+    let pick = null;
+    get(src).then(master => {
+      pick = bsubPickCaption(bsubParseHlsSubs(master, src));
+      D('PHỤ ĐỀ HLS: ' + (pick ? 'chọn "' + pick.label + '" (' + pick.lang + ')' + (pick.vi ? ' — đọc thẳng' : '') : 'video không có phụ đề'));
+      if (!pick) return null;
+      return get(pick.src).then(pl => (/^\s*WEBVTT/.test(pl) ? [pl] : Promise.all(bsubHlsSegments(pl, pick.src).map(get))));
+    }).then(parts => {
+      if (!parts || trackLoading !== key) return;
+      // Đoạn liền nhau có thể lặp câu ở chỗ nối: bỏ câu trùng.
+      const seen = new Set();
+      const cuesIn = parts.flatMap(t => bsubParseVtt(t))
+        .map(c => ({ ...c, text: cleanCaption(c.text) }))
+        .filter(c => c.text && !seen.has(c.start + '|' + c.text) && seen.add(c.start + '|' + c.text))
+        .sort((a, b) => a.start - b.start);
+      const merged = mergeCues(cuesIn, false, pick.lang);
+      D('  -> ' + parts.length + ' tệp, ' + merged.length + ' câu');
+      if (merged.length) setCues(key, pick.lang, merged, pick.vi);
+    }).catch(err => { D('  -> tải phụ đề lỗi: ' + err.message); trackLoading = ''; });
+  }
+
   // ---- Udemy: tự mở menu Captions, chọn Việt do người làm hoặc bản [CC]; ghi nhớ ngôn ngữ nào là [Auto] ----
   function udemyPick() {
     if (!IS_UDEMY || !video || cues.length) return;
@@ -690,7 +721,7 @@
     const v = pickVideo();
     const src = v ? v.currentSrc || v.src || '' : '';
     if (!IS_YT && v && video && src && lastVideoSrc && src !== lastVideoSrc) {
-      // Udemy/Coursera chuyển bài học trong cùng trang: bỏ phụ đề của bài cũ.
+      // Udemy/Coursera/DeepLearning.AI chuyển bài học trong cùng trang: bỏ phụ đề của bài cũ.
       D('Đổi bài học, bỏ phụ đề cũ');
       resetCues(); trackLoading = '';
     }
@@ -714,6 +745,7 @@
     if (on) {
       if (IS_YT) autoCaptions();
       scanTracks();
+      scanHls();
       udemyPick();
     }
     if (!video || !active) return 500;

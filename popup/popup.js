@@ -42,13 +42,13 @@ async function toTab(msg) {
   if (!tab) return { why: 'notab' };
   // Không đọc được URL = extension chưa được phép truy cập trang này.
   if (!tab.url) return { why: 'noaccess' };
-  if (!/^https?:\/\/([^/]+\.)?(youtube\.com|udemy\.com|coursera\.org)\//.test(tab.url)) return { why: 'notyt' };
+  if (!/^https?:\/\/([^/]+\.)?(youtube\.com|udemy\.com|coursera\.org|learn\.deeplearning\.ai)\//.test(tab.url)) return { why: 'notyt' };
   try { return { r: await chrome.tabs.sendMessage(tab.id, msg) }; } catch (e) { return { why: 'noscript' }; }
 }
 
 const WHY = {
-  notab: 'Mở một video YouTube, Udemy hoặc Coursera để dùng.',
-  notyt: 'Mở một video YouTube, Udemy hoặc Coursera để dùng.',
+  notab: 'Mở một video YouTube, Udemy, Coursera hoặc DeepLearning.AI để dùng.',
+  notyt: 'Mở một video YouTube, Udemy, Coursera hoặc DeepLearning.AI để dùng.',
   noaccess: 'Extension chưa được phép chạy trên YouTube: bấm chuột phải icon extension → "Có thể đọc và thay đổi dữ liệu trang web" → "Trên youtube.com", rồi tải lại trang (F5).',
   noscript: 'Extension chưa chạy trong tab này: bấm F5 để tải lại trang video.'
 };

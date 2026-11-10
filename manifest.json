@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "TransVid",
-  "version": "3.2.7",
-  "description": "Lồng tiếng Việt cho video YouTube, Udemy, Coursera: đọc thẳng phụ đề Việt nếu có, không thì dịch bằng Gemini (hoặc Google Dịch).",
+  "version": "3.3.0",
+  "description": "Lồng tiếng Việt cho video YouTube, Udemy, Coursera, DeepLearning.AI: đọc thẳng phụ đề Việt nếu có, không thì dịch bằng Gemini (hoặc Google Dịch).",
   "permissions": [
     "storage",
     "unlimitedStorage"
@@ -25,7 +25,8 @@
       "matches": [
         "*://*.youtube.com/*",
         "*://*.udemy.com/*",
-        "*://*.coursera.org/*"
+        "*://*.coursera.org/*",
+        "*://learn.deeplearning.ai/*"
       ]
     }
   ],
@@ -55,7 +56,8 @@
       "matches": [
         "*://*.youtube.com/*",
         "*://*.udemy.com/*",
-        "*://*.coursera.org/*"
+        "*://*.coursera.org/*",
+        "*://learn.deeplearning.ai/*"
       ],
       "js": [
         "lib/shared.js",

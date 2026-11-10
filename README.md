@@ -5,7 +5,7 @@
 <h1 align="center">TransVid</h1>
 
 <p align="center">
-  Lồng tiếng Việt cho video <b>YouTube</b>, <b>Udemy</b>, <b>Coursera</b> ngay trên trình duyệt.<br>
+  Lồng tiếng Việt cho video <b>YouTube</b>, <b>Udemy</b>, <b>Coursera</b>, <b>DeepLearning.AI</b> ngay trên trình duyệt.<br>
   Extension Chrome / Edge (Manifest V3).
 </p>
 
@@ -36,7 +36,7 @@
 
 ## Sử dụng
 
-1. Mở một video có phụ đề trên YouTube, Udemy hoặc Coursera.
+1. Mở một video có phụ đề trên YouTube, Udemy, Coursera hoặc learn.deeplearning.ai.
 2. Rê chuột vào video, bấm nút **VI Lồng tiếng** ở góc phải dưới.
 3. Bấm icon TransVid trên thanh công cụ để chọn giọng, chỉnh âm lượng, xem tiến độ dịch.
 
