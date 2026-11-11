@@ -42,6 +42,26 @@ function fakePage({ pageV = 'MAIN', ccPressed = 'false', voice = 'auto', geminiK
   const barEl = mkEl(), playBtn = mkEl(), wrapA = mkEl(), setBtn = mkEl(), leftBar = mkEl(), leftBtn = mkEl();
   const asBtn = (b, label, left) => { b.isBtn = true; b.offsetWidth = 40; b.offsetHeight = 40; b.setAttribute('aria-label', label); b.getBoundingClientRect = () => ({ left, right: left + 40, top: 315, bottom: 355, width: 40, height: 40 }); return b; };
   if (bar === 'yt') { barEl.appendChild(playBtn); player.appendChild(barEl); player.querySelector = s => (/ytp-right-controls/.test(s) ? barEl : null); }
+  if (bar === 'vds') {
+    // Vidstack (DeepLearning.AI): MỌI nút trái lẫn phải chung một nhóm; logo phải đứng ngay trước nút Captions.
+    const sp = mkEl(); sp.getBoundingClientRect = () => ({ left: 100, right: 400, top: 320, bottom: 340, width: 300, height: 20 });
+    const zero = mkEl(); zero.getBoundingClientRect = () => ({ left: -300, right: -300, top: 0, bottom: 0, width: 0, height: 0 });
+    // Tên chương (SPAN) bắt đầu ở nửa phải nhưng không phải nút: logo không được chèn trước nó.
+    const chap = mkEl(); chap.getBoundingClientRect = () => ({ left: 330, right: 490, top: 320, bottom: 340, width: 160, height: 20 });
+    barEl.appendChild(asBtn(leftBtn, 'Play', 10)); barEl.appendChild(sp); barEl.appendChild(zero); barEl.appendChild(chap);
+    barEl.appendChild(asBtn(playBtn, 'Captions', 500)); barEl.appendChild(asBtn(setBtn, 'Settings', 560));
+    player.appendChild(barEl);
+    player.querySelector = s => (/vds-caption-button/.test(s) ? playBtn : null);
+  }
+  if (bar === 'udemy') {
+    const wrap = (b, label, left) => { const w = mkEl(); w.getBoundingClientRect = () => ({ left, right: left + 40, top: 315, bottom: 355, width: 40, height: 40 }); w.appendChild(asBtn(b, label, left)); return w; };
+    const spacer = mkEl(); spacer.getBoundingClientRect = () => ({ left: 200, right: 500, top: 320, bottom: 340, width: 300, height: 20 });
+    barEl.appendChild(wrap(leftBtn, 'Play', 10)); barEl.appendChild(spacer);
+    barEl.appendChild(wrap(playBtn, 'Mute', 520));
+    const popper = mkEl(); popper.getBoundingClientRect = () => ({ left: 560, right: 600, top: 315, bottom: 355, width: 40, height: 40 });
+    popper.appendChild(asBtn(setBtn, 'Captions', 560)); barEl.appendChild(popper);
+    player.appendChild(barEl);
+  }
   if (bar === 'generic') {
     leftBar.appendChild(asBtn(leftBtn, 'Play', 10)); player.appendChild(leftBar);
     wrapA.appendChild(asBtn(setBtn, 'Settings', 560)); barEl.appendChild(wrapA);
@@ -87,7 +107,7 @@ function fakePage({ pageV = 'MAIN', ccPressed = 'false', voice = 'auto', geminiK
   const fireChange = ch => changeL.forEach(f => f(ch, 'local'));
   const status = () => new Promise(r => msgListener({ type: 'status' }, {}, r));
   const btn = () => [player, barEl].flatMap(e => e.children).find(c => c.classList && c.classList.contains('bsub-btn')) || null;
-  return { barEl, playBtn, ctx, video, ccBtn, sent, postCaptions, postVtt, posted, fetched, diag, fireChange, status, btn, player, store };
+  return { barEl, playBtn, leftBtn, ctx, video, ccBtn, sent, postCaptions, postVtt, posted, fetched, diag, fireChange, status, btn, player, store };
 }
 
 (async () => {
@@ -648,7 +668,10 @@ function fakePage({ pageV = 'MAIN', ccPressed = 'false', voice = 'auto', geminiK
     check('chưa bật: video gốc còn tiếng', A.video.muted === false);
     A.btn().fire('click');
     await sleep(700);
-    check('bấm bật: tắt hẳn tiếng video gốc', A.video.muted === true);
+    check('bật nhưng chưa có phụ đề: GIỮ tiếng gốc (không im lặng)', A.video.muted === false);
+    A.postCaptions('MAIN', ['This is the first line here.']);
+    await sleep(700);
+    check('có phụ đề để đọc: tắt hẳn tiếng video gốc', A.video.muted === true);
     A.btn().fire('click');
     await sleep(700);
     check('bấm tắt: bật lại tiếng video gốc', A.video.muted === false);
@@ -665,12 +688,16 @@ function fakePage({ pageV = 'MAIN', ccPressed = 'false', voice = 'auto', geminiK
     const B = fakePage({ autoDub: false });
     B.video.muted = true;
     await sleep(700);
+    B.postCaptions('MAIN', ['This is the first line here.']);
     B.btn().fire('click'); await sleep(700);
     B.btn().fire('click'); await sleep(700);
     check('video tự tắt tiếng từ trước -> vẫn giữ tắt tiếng', B.video.muted === true);
     // Tắt công tắc tổng: bật lại tiếng gốc.
     const E = fakePage({ autoDub: true });
     await sleep(700);
+    E.postCaptions('MAIN', ['This is the first line here.']);
+    await sleep(700);
+    check('tự bật + có phụ đề: tắt tiếng gốc', E.video.muted === true);
     E.fireChange({ enabled: { oldValue: true, newValue: false } });
     await sleep(700);
     check('tắt công tắc tổng -> bật lại tiếng gốc', E.video.muted === false);
@@ -754,6 +781,8 @@ function fakePage({ pageV = 'MAIN', ccPressed = 'false', voice = 'auto', geminiK
     const P = fakePage({ ccPressed: 'true' });
     let plays = 0;
     P.video.play = () => { plays++; P.video.paused = false; return Promise.resolve(); };
+    await sleep(100);
+    P.postCaptions('MAIN', ['This is the first line here.']);   // chỉ tắt tiếng gốc khi đã có câu
     await sleep(700);
     check('đang lồng tiếng: video bị tắt tiếng', P.video.muted === true);
     // Người dùng tự dừng khi tab đang hiện: không tự chạy lại.
@@ -966,6 +995,21 @@ function fakePage({ pageV = 'MAIN', ccPressed = 'false', voice = 'auto', geminiK
     check('Udemy/Coursera/DLAI: logo đứng ngoài cùng trái của cả dãy nút phải', ui === 0 && U.barEl.children.length === 3, [ui, U.barEl.children.length]);
     check('Udemy/Coursera/DLAI: logo cùng cỡ nút bên cạnh', U.btn().style['--bsub-w'] === '40px' && U.btn().style['--bsub-h'] === '40px', U.btn().style);
     check('Udemy/Coursera/DLAI: không nhảy sang dãy nút trái', !U.player.children[0].children.includes(U.btn()));
+    const V = fakePage({ site: 'dlai', ccPressed: 'false', autoDub: false, bar: 'vds' });
+    await sleep(700);
+    const vi = V.barEl.children.indexOf(V.btn());
+    check('Vidstack (DeepLearning.AI): logo ngay trước nút Captions, sau nút Play', vi > 0 && V.barEl.children[vi + 1] === V.playBtn && V.barEl.children.indexOf(V.leftBtn) < vi, V.barEl.children.map(c => c.attrs['aria-label'] || (c.classList.contains('bsub-btn') ? 'LOGO' : '-')));
+    await sleep(700);
+    check('Vidstack: không chèn lại mỗi nhịp', V.barEl.children.filter(c => c.classList && c.classList.contains('bsub-btn')).length === 1);
+    // Vidstack dựng lại thanh nút: gỡ nút Captions rồi gắn lại ở chỗ khác -> logo phải tự về lại ngay trước Captions.
+    V.barEl.children = V.barEl.children.filter(c => c !== V.playBtn); V.playBtn.parentNode = null; V.barEl.appendChild(V.playBtn);
+    await sleep(1600);
+    const vi2 = V.barEl.children.indexOf(V.btn());
+    check('Vidstack dựng lại: logo tự về trước Captions', vi2 >= 0 && V.barEl.children[vi2 + 1] === V.playBtn, V.barEl.children.map(c => c.attrs['aria-label'] || (c.classList.contains('bsub-btn') ? 'LOGO' : '-')));
+    const U2 = fakePage({ site: 'udemy', ccPressed: 'false', autoDub: false, bar: 'udemy' });
+    await sleep(1500);
+    const kids = U2.barEl.children, ui2 = kids.indexOf(U2.btn());
+    check('Udemy: logo cùng hàng, ngay trước khung nút loa (đầu dãy phải), không lọt vào khung popper của CC', ui2 > 0 && kids[ui2 + 1] && kids[ui2 + 1].children[0] === U2.playBtn, kids.map(c => (c.classList && c.classList.contains('bsub-btn')) ? 'LOGO' : ((c.children[0] && c.children[0].attrs['aria-label']) || '-')));
     const N = fakePage({ ccPressed: 'false', autoDub: false });
     await sleep(700);
     check('không thấy thanh điều khiển: vẫn có nút (nổi trên video)', N.btn() && !N.btn().classList.contains('bsub-inbar'));
@@ -1003,6 +1047,13 @@ function fakePage({ pageV = 'MAIN', ccPressed = 'false', voice = 'auto', geminiK
     const tr = P.sent.filter(m => m.type === 'translate');
     check('dịch phụ đề tiếng Anh', tr.length && /Welcome to AI Python/.test(tr[0].lines.join(' ')) && /^en/.test(tr[0].lang), tr.map(m => [m.lang, m.lines]));
     check('chỉ tải track English, không tải track khác', !P.fetched.some(u => /deu|zhs/.test(u)), P.fetched);
+    const dg = await P.diag();
+    check('Chẩn đoán: có thông tin trình phát (src, tệp m3u8/vtt, nút điều khiển)', dg.player && /m3u8/.test(dg.player.src) && Array.isArray(dg.player.media) && Array.isArray(dg.player.controls), dg.player);
+    // currentSrc là blob: (hls.js) -> ghi nhật ký rõ ràng thay vì lặng lẽ bỏ qua.
+    const B = fakePage({ site: 'dlai', pageV: 'courses/x/lesson/3', videoSrc: 'blob:https://learn.deeplearning.ai/abc' });
+    await sleep(1500);
+    const bl = (await B.diag()).log.join('\n');
+    check('Chẩn đoán: currentSrc không phải .m3u8 thì ghi nhật ký', /blob:/.test(bl) && /m3u8/.test(bl), bl);
 
     // Playlist chia nhiều đoạn .vtt: ghép đủ cả các đoạn.
     const pl2 = '#EXTM3U\n#EXTINF:10.0,\nseg0.vtt\n#EXTINF:10.0,\nseg1.vtt\n#EXT-X-ENDLIST';
@@ -1020,8 +1071,60 @@ function fakePage({ pageV = 'MAIN', ccPressed = 'false', voice = 'auto', geminiK
 
     const mf = JSON.parse(fs.readFileSync(path.join(DIR, 'manifest.json'), 'utf8'));
     check('manifest chạy content script trên learn.deeplearning.ai', mf.content_scripts.some(c => c.js.includes('content/content.js') && c.matches.some(x => /deeplearning\.ai/.test(x))));
+    // Không có host_permissions thì popup không đọc được URL tab (Chẩn đoán báo "noaccess").
+    check('host_permissions có learn.deeplearning.ai (popup + Chẩn đoán đọc được tab)', mf.host_permissions.some(x => /learn\.deeplearning\.ai/.test(x)), mf.host_permissions);
     check('logo dùng được trên learn.deeplearning.ai', mf.web_accessible_resources.some(w => w.matches.some(x => /deeplearning\.ai/.test(x))));
     check('popup nhận trang learn.deeplearning.ai', /deeplearning/.test(fs.readFileSync(path.join(DIR, 'popup/popup.js'), 'utf8')));
+  }
+
+  console.log('46. DeepLearning.AI (trình phát blob/hls.js): hook.js bắt tệp phụ đề .vtt qua XHR');
+  {
+    const posted = [];
+    const ctx = { console, Promise, String, JSON, Error, setTimeout, TextDecoder, location: { origin: 'https://learn.deeplearning.ai' }, document: { getElementById: () => null },
+      fetch: async () => ({ clone: () => ({ text: async () => 'WEBVTT' }) }) };
+    ctx.XMLHttpRequest = function () { this.l = {}; this.responseType = ''; };
+    ctx.XMLHttpRequest.prototype.open = function (m, u) { this.u = u; };
+    ctx.XMLHttpRequest.prototype.addEventListener = function (t, f) { this.l[t] = f; };
+    ctx.window = ctx; ctx.postMessage = d => posted.push(d); ctx.addEventListener = () => {};
+    vm.createContext(ctx);
+    vm.runInContext(fs.readFileSync(path.join(DIR, 'content/hook.js'), 'utf8'), ctx);
+    const load = (u, text) => { const x = new ctx.XMLHttpRequest(); x.open('GET', u); x.responseText = text; if (x.l.load) x.l.load(); };
+    const B = 'https://video.deeplearning.ai/upv2/course-x/L0/';
+    load(B + 'subtitle/eng/abc-eng-6e0.vtt', 'WEBVTT\n\n00:00.000 --> 00:02.000\nHello there.\n');
+    load(B + 'thumbnails/thumbnail-1.vtt', 'WEBVTT thumbs');
+    load(B + 'chapters/chapter-1.vtt', 'WEBVTT chapters');
+    // hls.js tải phụ đề dạng arraybuffer: phải giải mã ra chữ, không JSON.stringify ra "{}".
+    const xb = new ctx.XMLHttpRequest(); xb.open('GET', B + 'subtitle/eng/buf-eng.vtt'); xb.responseType = 'arraybuffer';
+    xb.response = new TextEncoder().encode('WEBVTT\n\n00:00.000 --> 00:02.000\nFrom a buffer.\n').buffer; if (xb.l.load) xb.l.load();
+    const vb = posted.find(d => d.__bsub === 'vtt' && /buf-eng/.test(d.url));
+    check('phụ đề dạng arraybuffer: giải mã ra WEBVTT', vb && /^WEBVTT/.test(vb.text) && /From a buffer/.test(vb.text), vb && vb.text);
+    const v = posted.filter(d => d.__bsub === 'vtt' && !/buf-eng/.test(d.url));
+    check('bắt phụ đề subtitle/eng/….vtt, bỏ thumbnails/chapters', v.length === 1 && /subtitle\/eng/.test(v[0].url) && /Hello there/.test(v[0].text), v.map(d => d.url));
+    const mf = JSON.parse(fs.readFileSync(path.join(DIR, 'manifest.json'), 'utf8'));
+    check('hook.js chạy trên learn.deeplearning.ai (MAIN world)', mf.content_scripts.some(c => c.js.includes('content/hook.js') && c.world === 'MAIN' && c.matches.some(x => /learn\.deeplearning\.ai/.test(x))));
+  }
+
+  console.log('47. DeepLearning.AI: phụ đề hook bắt được -> dịch + đọc; đổi bài không làm mất phụ đề mới');
+  {
+    const B = 'https://video.deeplearning.ai/upv2/course-x/L0/';
+    const P = fakePage({ site: 'dlai', pageV: 'courses/x/lesson/1', videoSrc: 'blob:https://learn.deeplearning.ai/aaa' });
+    await sleep(100);
+    P.postVtt(B + 'subtitle/eng/abc-eng.vtt', 'WEBVTT\n\n00:00:00.100 --> 00:00:03.000\nWelcome to AI Python for Beginners.\n\n00:00:03.100 --> 00:00:06.000\nI am glad you are here today.\n');
+    await sleep(800);
+    const tr = P.sent.filter(m => m.type === 'translate');
+    check('dịch phụ đề tiếng Anh (lang en)', tr.length && /Welcome to AI Python/.test(tr[0].lines.join(' ')) && tr[0].lang === 'en', tr.map(m => [m.lang, m.lines]));
+    check('có câu thì tắt tiếng gốc', P.video.muted === true);
+    // Đổi bài: phụ đề bài mới đến TRƯỚC khi nguồn video (blob) đổi -> không được xoá mất.
+    P.postVtt(B.replace('L0', 'L1') + 'subtitle/eng/def-eng.vtt', 'WEBVTT\n\n00:00:00.100 --> 00:00:03.000\nThis is the second lesson now.\n');
+    await sleep(50);
+    P.video.currentSrc = 'blob:https://learn.deeplearning.ai/bbb';
+    await sleep(1200);
+    const d = await P.diag();
+    check('đổi bài: dùng phụ đề bài mới', /def-eng/.test(d.cueKey) && d.total === 1, [d.cueKey, d.total]);
+    // Đã có English thì bản tiếng Đức tải sau (người dùng đổi ngôn ngữ CC) không thay thế.
+    P.postVtt(B.replace('L0', 'L1') + 'subtitle/deu/def-deu.vtt', 'WEBVTT\n\n00:00:00.100 --> 00:00:03.000\nDas ist die zweite Lektion.\n');
+    await sleep(300);
+    check('đã có English: không thay bằng tiếng Đức', /def-eng/.test((await P.diag()).cueKey));
   }
 
   console.log('\n' + pass + ' đạt, ' + fail + ' lỗi');

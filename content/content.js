@@ -91,6 +91,7 @@
         video: video ? { t: +t.toFixed(1), paused: video.paused, volume: +video.volume.toFixed(2), muted: video.muted } : null,
         sample: cues.slice(0, 3).map(c => ({ src: c.text, vi: c.tr })),
         current: i >= 0 ? { src: cues[i].text, vi: cues[i].tr, start: cues[i].start, end: cues[i].end } : null,
+        player: IS_YT ? null : playerInfo(),
         timedtextSeenByBrowser: performance.getEntriesByType('resource').filter(x => x.name.includes('/api/timedtext')).map(x => (new URL(x.name).searchParams.get('v') || '?') + '/' + (new URL(x.name).searchParams.get('lang') || '?')),
         lastError, log: diag.slice()
       });
@@ -101,6 +102,30 @@
       reply({ ok: true });
     }
   });
+
+  // Chẩn đoán trình phát ngoài YouTube: nguồn video, tệp .m3u8/.vtt trình duyệt đã tải, các nút ở đáy video.
+  function playerInfo() {
+    const v = video, short = u => String(u).split('?')[0].split('/').slice(-3).join('/');
+    let controls = [];
+    if (v && v.getBoundingClientRect && document.querySelectorAll) {
+      const r = v.getBoundingClientRect();
+      controls = Array.from(document.querySelectorAll('button, [role="button"], [aria-label]')).filter(e => {
+        if (!e.getBoundingClientRect) return false;
+        const q = e.getBoundingClientRect();
+        return q.width && q.height < 80 && q.top > r.bottom - 90 && q.bottom < r.bottom + 70 && q.left >= r.left - 5 && q.right <= r.right + 5;
+      }).slice(0, 20).map(e => {
+        const q = e.getBoundingClientRect(), p = e.parentElement;
+        return [e.tagName, e.getAttribute('role') || '', (e.getAttribute('aria-label') || '').slice(0, 20), (e.textContent || '').trim().slice(0, 10),
+          String(e.className || '').slice(0, 30), p ? p.tagName + '.' + String(p.className || '').slice(0, 30) : '', Math.round(q.left - r.left), Math.round(r.bottom - q.bottom)].join('|');
+      });
+    }
+    return {
+      src: v ? String(v.currentSrc || v.src || '').slice(0, 100) : '',
+      media: performance.getEntriesByType('resource').map(x => x.name).filter(n => /\.m3u8|\.vtt/i.test(n)).slice(-6).map(short),
+      textTracks: v && v.textTracks ? Array.from(v.textTracks).map(t => t.language + '/' + t.kind + '/' + t.mode) : [],
+      controls
+    };
+  }
 
   // ---- Lấy phụ đề YouTube (qua hook.js) làm nguồn để dịch ----
   D('content.js khởi động');
@@ -144,6 +169,7 @@
     handleVtt(e.data.url, e.data.text);
   });
   function handleVtt(url, text) {
+    if (IS_DLAI) return handleDlaiVtt(url, text);
     const m = /udemycdn\.com\/[^/]+\/([A-Za-z]{2,3}(?:[_-][A-Za-z]{2,4})?)\//.exec(String(url));
     const lang = m ? m[1] : '';
     D('PHỤ ĐỀ VTT đến: lang=' + lang + (udemyAutoLangs.has(bsubSourceLang(lang)) ? ' (máy dịch)' : ''));
@@ -171,6 +197,29 @@
     const list = mergeCues(bsubParseVtt(text).map(c => ({ ...c, text: cleanCaption(c.text) })).filter(c => c.text), false, lang);
     D('  -> ' + list.length + ' câu');
     if (list.length) setCues(key, lang, list, isVi);
+  }
+  // DeepLearning.AI: …/subtitle/<mã 3 chữ>/….vtt (eng, deu, spa, jpn, pt, zhs, zht…). Trình phát tự tải bản English khi mở bài.
+  // Ưu tiên: tiếng Việt (đọc thẳng) > English > ngôn ngữ khác. Đã có English thì bản khác tải sau không thay thế.
+  const DLAI_LANG = { eng: 'en', deu: 'de', spa: 'es', jpn: 'ja', zhs: 'zh-Hans', zht: 'zh-Hant', fra: 'fr', kor: 'ko', vie: 'vi', ita: 'it', rus: 'ru', ara: 'ar', hin: 'hi', ind: 'id', tha: 'th', tur: 'tr' };
+  let dlaiLastVtt = null;   // { url, text, at } tệp phụ đề mới nhất (để giữ lại khi đổi bài)
+  function handleDlaiVtt(url, text, again) {
+    const m = /\/subtitle\/([^/]+)\//.exec(String(url));
+    const code = m ? m[1].toLowerCase() : '';
+    const lang = DLAI_LANG[code] || code;
+    if (!again) D('PHỤ ĐỀ DeepLearning.AI đến: ' + code + ' (' + lang + ')');
+    if (!bsubSourceLang(lang)) return;
+    const key = 'dl|' + String(url).split('?')[0];
+    if (key === cueKey) return;
+    const rank = l => (bsubIsVi(l) ? 2 : bsubSourceLang(l) === 'en' ? 1 : 0);
+    // Cùng bài (cùng thư mục video) đã có bản tốt hơn hoặc bằng: không thay.
+    const dir = u => String(u).split('?')[0].replace(/\/subtitle\/.*$/, '');
+    if (cues.length && cueKey.startsWith('dl|') && dir(cueKey.slice(3)) === dir(url) && rank(cueLang) >= rank(lang)) {
+      D('  -> bỏ: đã có phụ đề ' + cueLang); return;
+    }
+    dlaiLastVtt = { url, text, at: Date.now() };
+    const list = mergeCues(bsubParseVtt(text).map(c => ({ ...c, text: cleanCaption(c.text) })).filter(c => c.text), false, lang);
+    D('  -> ' + list.length + ' câu');
+    if (list.length) setCues(key, lang, list, bsubIsVi(lang));
   }
   const udemyAutoLangs = new Set();   // ngôn ngữ mà menu Udemy ghi "[Auto]"
   let udemyTriedFor = '', udemyMenuKnown = false, udemyChosenLang = '', pendingVtt = null, udemyNoMenuAt = 0;
@@ -517,10 +566,15 @@
   }
 
   // ---- learn.deeplearning.ai: video HLS; phụ đề là track WebVTT trong danh sách .m3u8 (không có tiếng Việt) ----
+  let hlsSkipLogged = '';
   function scanHls() {
-    if (!IS_DLAI || !video || Date.now() - lastScan < 1000) return;
+    // cues.length: hook.js đã bắt được tệp phụ đề (trình phát hls.js) thì không tải lại.
+    if (!IS_DLAI || !video || cues.length || Date.now() - lastScan < 1000) return;
     const src = video.currentSrc || video.src || '';
-    if (!/\.m3u8(\?|$)/i.test(src)) return;
+    if (!/\.m3u8(\?|$)/i.test(src)) {
+      if (src && hlsSkipLogged !== src) { hlsSkipLogged = src; D('HLS: nguồn video không phải .m3u8 (' + src.slice(0, 60) + '), chưa tìm được phụ đề'); }
+      return;
+    }
     lastScan = Date.now();
     const key = 'hls|' + src.split('?')[0];
     if (key === cueKey || key === trackLoading) return;
@@ -626,7 +680,7 @@
     updateButton();
   }
 
-  // Đang lồng tiếng: tắt hẳn tiếng video gốc (loa bị bật lại thì tắt lại ngay).
+  // Đang lồng tiếng và đã có phụ đề: tắt hẳn tiếng video gốc (loa bị bật lại thì tắt lại ngay).
   // Tắt lồng tiếng: bật lại tiếng, nhưng chỉ khi chính extension đã tắt (video vốn tắt tiếng thì giữ nguyên).
   let mutedVideo = null;
   function applyMute(on) {
@@ -675,26 +729,52 @@
     return h;
   }
 
-  // Dãy nút bên phải của thanh điều khiển (giống YouTube Dubbing: logo đứng ngoài cùng bên trái của dãy, trước CC / cài đặt / toàn màn hình).
-  // YouTube có lớp riêng. Trang khác: tìm nút toàn màn hình / cài đặt / phụ đề ở đáy, nửa phải video, rồi đi ngược lên
-  // tới khung lớn nhất mà mọi nút bên trong vẫn nằm ở nửa phải (= cả dãy nút phải, không lẫn nút Play bên trái).
+  // Chỗ đặt logo: { group, before } = đầu dãy nút bên phải của thanh điều khiển (giống YouTube Dubbing: trước CC / cài đặt / toàn màn hình).
+  //   YouTube: đầu .ytp-right-controls.  DeepLearning.AI (Vidstack): ngay trước .vds-caption-button (mốc cố định).
+  //   Trang khác (Udemy, Coursera…): từ nút toàn màn hình / cài đặt / phụ đề ở đáy nửa phải, bỏ khung bọc riêng một nút
+  //   (popper, tooltip), đi lên tới hàng nút. Hàng chỉ có nút nửa phải: đứng đầu hàng. Hàng chung cả nút trái (Udemy):
+  //   đứng trước phần tử đầu tiên ở nửa phải có chứa nút (vd nút loa của Udemy).
+  //   Thanh nút đang ẩn (không đo được) thì trả về null: giữ nguyên chỗ cũ.
   function rightControlsIn(v, host) {
-    if (IS_YT) return host.querySelector ? host.querySelector('.ytp-right-controls') : null;
+    if (IS_YT) {
+      const g = host.querySelector ? host.querySelector('.ytp-right-controls') : null;
+      return g ? { group: g, before: g.firstChild } : null;
+    }
     if (!host.querySelectorAll) return null;
-    const r = v.getBoundingClientRect(), mid = r.left + r.width / 2;
+    // Nửa trái/phải tính theo khung trình phát; khung chưa dựng xong (quá hẹp) thì chưa đặt, thử lại nhịp sau.
+    const hr = host.getBoundingClientRect ? host.getBoundingClientRect() : null;
+    const r = hr && hr.width ? hr : v.getBoundingClientRect(), mid = r.left + r.width / 2;
+    if (!(r.width > 200)) return null;
     const isCtl = q => q && q.width && q.bottom > r.bottom - 100 && q.top < r.bottom + 60;
     const btns = el => Array.from(el.querySelectorAll('button, [role="button"]')).filter(b => b !== btnEl && b.getBoundingClientRect);
+    const shown = el => btns(el).filter(x => isCtl(x.getBoundingClientRect()));
+    const hasLeft = el => shown(el).some(x => x.getBoundingClientRect().left < mid);
+    const isBtn = el => (el.matches ? el.matches('button, [role="button"]') : !!el.isBtn);
+    if (IS_DLAI && host.querySelector) {
+      const cap = host.querySelector('.vds-caption-button');
+      if (cap && cap.parentElement && isCtl(cap.getBoundingClientRect())) return { group: cap.parentElement, before: cap };
+    }
     for (const b of btns(host)) {
       const name = [b.getAttribute('aria-label'), b.getAttribute('data-purpose'), b.getAttribute('title'), typeof b.className === 'string' ? b.className : ''].join(' ');
       if (!/full\s*-?screen|settings|caption|subtitle|toàn màn hình|cài đặt|phụ đề/i.test(name)) continue;
       const q = b.getBoundingClientRect();
       if (!isCtl(q) || q.left <= mid || !b.parentElement) continue;
       let row = b.parentElement;
-      for (let p = row.parentElement, i = 0; p && p !== host && i < 5; p = p.parentElement, i++) {
-        if (btns(p).some(x => { const o = x.getBoundingClientRect(); return isCtl(o) && o.left < mid; })) break;
+      // Khung bọc riêng một nút (popper của menu CC Udemy, tooltip…): không phải hàng nút, đi lên tiếp.
+      while (row.parentElement && row !== host && shown(row).length < 2) row = row.parentElement;
+      // Hàng chỉ có nút nửa phải: lên tới khung lớn nhất vẫn chỉ có nút nửa phải.
+      for (let i = 0; i < 5 && !hasLeft(row); i++) {
+        const p = row.parentElement;
+        if (!p || p === host || hasLeft(p)) break;
         row = p;
       }
-      return row;
+      if (!hasLeft(row)) return { group: row, before: Array.from(row.children || []).find(c => c !== btnEl) || null };
+      const item = Array.from(row.children || []).find(c => {
+        if (c === btnEl || !c.getBoundingClientRect) return false;
+        const o = c.getBoundingClientRect();
+        return o.width > 0 && o.left > mid && (isBtn(c) ? isCtl(o) : shown(c).length > 0);
+      });
+      return item ? { group: row, before: item } : null;
     }
     return null;
   }
@@ -735,6 +815,7 @@
   }
   function hideTip() { if (tipEl) tipEl.classList.remove('bsub-tip-on'); }
 
+  let spotCheckedAt = 0;
   function updateButton() {
     const v = video;
     if (!cfg.enabled || !v) { if (btnEl) btnEl.style.display = 'none'; return; }
@@ -755,11 +836,13 @@
     // Ưu tiên đặt logo ngoài cùng bên trái dãy nút phải của thanh điều khiển.
     // Không thấy thanh điều khiển thì để nổi ở góc video như trước.
     const inBar = btnEl.classList.contains('bsub-inbar') && btnEl.parentNode && host.contains(btnEl);
-    const group = inBar ? null : rightControlsIn(v, host);
-    if (group) {
-      if (group.firstChild !== btnEl) group.insertBefore(btnEl, group.firstChild || null);
+    // Đã nằm trong thanh nút: vẫn kiểm tra lại mỗi giây (trình phát hay dựng lại thanh nút làm logo lệch chỗ).
+    let spot = null;
+    if (!inBar || Date.now() - spotCheckedAt > 1000) { spotCheckedAt = Date.now(); spot = rightControlsIn(v, host); }
+    if (spot) {
+      if (btnEl.nextSibling !== spot.before || btnEl.parentNode !== spot.group) spot.group.insertBefore(btnEl, spot.before || null);
       btnEl.classList.add('bsub-inbar');
-      fitToRow(group);
+      fitToRow(spot.group);
     } else if (!inBar && btnEl.parentNode !== host) {
       btnEl.classList.remove('bsub-inbar');
       host.appendChild(btnEl);
@@ -802,7 +885,10 @@
     if (!IS_YT && v && video && src && lastVideoSrc && src !== lastVideoSrc) {
       // Udemy/Coursera/DeepLearning.AI chuyển bài học trong cùng trang: bỏ phụ đề của bài cũ.
       D('Đổi bài học, bỏ phụ đề cũ');
+      const keep = IS_DLAI && dlaiLastVtt && Date.now() - dlaiLastVtt.at < 8000 && cueKey === 'dl|' + String(dlaiLastVtt.url).split('?')[0] ? dlaiLastVtt : null;
       resetCues(); trackLoading = '';
+      // DeepLearning.AI: phụ đề bài mới thường đến TRƯỚC khi nguồn video (blob) đổi -> dùng lại, không xoá mất.
+      if (keep) { D('  -> giữ phụ đề bài mới vừa tải'); handleDlaiVtt(keep.url, keep.text, true); }
     }
     if (src) lastVideoSrc = src;
     if (v !== video) {
@@ -818,7 +904,8 @@
         v.addEventListener('play', () => D('VIDEO CHẠY' + (document.hidden ? ' (tab đang ẩn)' : '')));
       }
     }
-    applyMute(on);
+    // Chỉ tắt tiếng gốc khi đã có câu để đọc: chưa tìm được phụ đề (hoặc lỗi) thì vẫn nghe tiếng gốc, không bao giờ im lặng.
+    applyMute(active);
     updateButton();
     // Chưa bấm nút: không bật CC, không mở menu phụ đề, không tải phụ đề.
     if (on) {

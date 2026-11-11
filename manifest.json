@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "TransVid",
-  "version": "3.3.3",
+  "version": "3.4.2",
   "description": "Lồng tiếng Việt cho video YouTube, Udemy, Coursera, DeepLearning.AI: đọc thẳng phụ đề Việt nếu có, không thì dịch bằng Gemini (hoặc Google Dịch).",
   "permissions": [
     "storage",
@@ -11,6 +11,7 @@
     "*://*.youtube.com/*",
     "*://*.udemy.com/*",
     "*://*.coursera.org/*",
+    "*://learn.deeplearning.ai/*",
     "https://generativelanguage.googleapis.com/*",
     "https://translate.googleapis.com/*",
     "https://translate.google.com/*",
@@ -21,7 +22,9 @@
   ],
   "web_accessible_resources": [
     {
-      "resources": ["icons/icon128.png"],
+      "resources": [
+        "icons/icon128.png"
+      ],
       "matches": [
         "*://*.youtube.com/*",
         "*://*.udemy.com/*",
@@ -36,15 +39,26 @@
   "action": {
     "default_popup": "popup/popup.html",
     "default_title": "TransVid — lồng tiếng Việt",
-    "default_icon": { "16": "icons/icon16.png", "32": "icons/icon32.png", "48": "icons/icon48.png", "128": "icons/icon128.png" }
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "32": "icons/icon32.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
   },
-  "icons": { "16": "icons/icon16.png", "32": "icons/icon32.png", "48": "icons/icon48.png", "128": "icons/icon128.png" },
+  "icons": {
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
   "options_page": "options/options.html",
   "content_scripts": [
     {
       "matches": [
         "*://*.youtube.com/*",
-        "*://*.udemy.com/*"
+        "*://*.udemy.com/*",
+        "*://learn.deeplearning.ai/*"
       ],
       "js": [
         "content/hook.js"

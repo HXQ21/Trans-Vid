@@ -100,6 +100,12 @@ $('diag').onclick = async () => {
     lines.push('Video trang=' + r.pageVideoId + ' | phụ đề đang dùng=' + r.cueKey + ' | ' + r.total + ' câu');
     lines.push('Video: ' + JSON.stringify(r.video));
     lines.push('Giọng trong tab: chọn=' + r.voiceSetting + ' giọng máy dùng=' + r.localVoice + ' | giọng Việt có: ' + (r.viVoicesInTab.join(', ') || 'KHÔNG CÓ'));
+    if (r.player) {
+      lines.push('Trình phát: src=' + (r.player.src || '(trống)') + ' | textTracks=' + (r.player.textTracks.join(', ') || 'KHÔNG CÓ'));
+      lines.push('Tệp m3u8/vtt đã tải: ' + (r.player.media.join(', ') || 'KHÔNG CÓ'));
+      lines.push('Nút ở đáy video (thẻ|role|aria|chữ|class|cha|trái|đáy):');
+      lines.push(...(r.player.controls.length ? r.player.controls.map(c => '  ' + c) : ['  KHÔNG CÓ']));
+    }
     lines.push('Trình duyệt đã tải timedtext: ' + (r.timedtextSeenByBrowser && r.timedtextSeenByBrowser.length ? r.timedtextSeenByBrowser.join(', ') : 'KHÔNG CÓ'));
     lines.push('Lỗi gần nhất: ' + (r.lastError || '(không)'));
     lines.push('Câu đầu: ' + JSON.stringify(r.sample));

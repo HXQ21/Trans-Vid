@@ -1,10 +1,13 @@
-// Chạy trong trang (MAIN world) YouTube và Udemy: đọc lại phụ đề mà trình phát tự tải về.
+// Chạy trong trang (MAIN world) YouTube, Udemy, DeepLearning.AI: đọc lại phụ đề mà trình phát tự tải về.
 //   YouTube: /api/timedtext (khi bật CC)   ·   Udemy: tệp .vtt trên udemycdn.com
+//   DeepLearning.AI: trình phát Vidstack + hls.js tải subtitle/<ngôn ngữ>/….vtt qua XHR (bỏ thumbnails/, chapters/)
 (() => {
   if (window.__bsubHook) return;
   window.__bsubHook = true;
   const isTT = u => typeof u === 'string' && u.indexOf('/api/timedtext') !== -1;
-  const isVTT = u => typeof u === 'string' && /udemycdn\.com\/.+\.vtt(\?|$)/.test(u) && !/thumb/.test(u);
+  const isVTT = u => typeof u === 'string' && (
+    (/udemycdn\.com\/.+\.vtt(\?|$)/.test(u) && !/thumb/.test(u)) ||
+    /deeplearning\.ai\/.+\/subtitle\/[^/]+\/[^/?]+\.vtt(\?|$)/.test(u));
   const post = (type, url, text) => {
     if (text) window.postMessage({ __bsub: type, url, text }, location.origin);
   };
@@ -36,6 +39,16 @@
     return p;
   };
 
+  // Nội dung XHR ra chữ: hls.js (DeepLearning.AI) tải phụ đề dạng arraybuffer -> giải mã UTF-8, không JSON.stringify (ra "{}").
+  const xhrText = x => {
+    const rt = x.responseType;
+    if (rt === '' || rt === 'text') return x.responseText;
+    const r = x.response;
+    if (typeof r === 'string') return r;
+    if (r && (Object.prototype.toString.call(r) === '[object ArrayBuffer]' || ArrayBuffer.isView(r)) && typeof TextDecoder !== 'undefined') return new TextDecoder('utf-8').decode(r);
+    return JSON.stringify(r);
+  };
+
   const origOpen = XMLHttpRequest.prototype.open;
   XMLHttpRequest.prototype.open = function (method, url) {
     try {
@@ -44,11 +57,7 @@
       if (type) {
         note('bắt xhr ' + type);
         this.addEventListener('load', () => {
-          try {
-            const rt = this.responseType;
-            post(type, u, rt === '' || rt === 'text' ? this.responseText
-              : typeof this.response === 'string' ? this.response : JSON.stringify(this.response));
-          } catch (e) { note('xhr đọc lỗi: ' + e); }
+          try { post(type, u, xhrText(this)); } catch (e) { note('xhr đọc lỗi: ' + e); }
         });
       }
     } catch (e) {}
