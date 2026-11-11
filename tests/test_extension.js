@@ -14,26 +14,41 @@ function loadShared() {
 }
 
 // Trang YouTube giả: video, nút CC, chrome.* giả; chạy shared.js + content.js thật.
-function fakePage({ pageV = 'MAIN', ccPressed = 'false', voice = 'auto', geminiKey = '', cache = null, viaFn = () => 'google', site = 'youtube', tracks = [], files = {}, autoDub = true, store = {}, hiddenTab = false, videoSrc = '' } = {}) {
+function fakePage({ pageV = 'MAIN', ccPressed = 'false', voice = 'auto', geminiKey = '', cache = null, viaFn = () => 'google', site = 'youtube', tracks = [], files = {}, autoDub = true, store = {}, hiddenTab = false, videoSrc = '', bar = '' } = {}) {
   let msgListener = null; const winL = {}; const changeL = [];
   const trackEls = tracks.map(t => ({ srclang: t.lang, label: t.label, getAttribute: k => (k === 'src' ? t.src : null) }));
   // Phần tử DOM giả tối thiểu (cho nút bật lồng tiếng trên video).
   const mkEl = () => {
     const set = new Set();
     const e = {
-      style: {}, children: [], attrs: {}, listeners: {}, textContent: '', title: '', parentNode: null,
+      style: { setProperty(k, v) { this[k] = v; } }, children: [], attrs: {}, listeners: {}, textContent: '', title: '', parentNode: null, isBtn: false,
+      get parentElement() { return this.parentNode; },
+      querySelectorAll() { return this.children.flatMap(c => [c, ...(c.querySelectorAll ? c.querySelectorAll() : [])]).filter(c => c.isBtn); },
       classList: { add: c => set.add(c), remove: c => set.delete(c), contains: c => set.has(c), toggle: (c, f) => ((f === undefined ? !set.has(c) : f) ? set.add(c) : set.delete(c)) },
       setAttribute(k, v) { this.attrs[k] = String(v); }, getAttribute(k) { return this.attrs[k]; },
       addEventListener(t, f) { (this.listeners[t] = this.listeners[t] || []).push(f); },
       appendChild(c) { if (c.parentNode) c.remove(); this.children.push(c); c.parentNode = this; return c; },
+      get firstChild() { return this.children[0] || null; },
+      insertBefore(c, ref) { if (c.parentNode) c.remove(); const i = this.children.indexOf(ref); this.children.splice(i < 0 ? this.children.length : i, 0, c); c.parentNode = this; return c; },
       remove() { if (this.parentNode) { this.parentNode.children = this.parentNode.children.filter(x => x !== this); this.parentNode = null; } },
-      contains(c) { return c === this || this.children.includes(c); },
+      contains(c) { return c === this || this.children.some(x => x === c || (x.contains && x.contains(c))); },
       fire(t) { (this.listeners[t] || []).forEach(f => f({ stopPropagation() {}, preventDefault() {}, stopImmediatePropagation() {} })); },
     };
     return e;
   };
   const player = mkEl();
-  const video = { currentTime: 0, currentSrc: videoSrc, paused: false, volume: 1, muted: false, vl: {}, addEventListener(t, f) { (this.vl[t] = this.vl[t] || []).push(f); }, fire(t) { (this.vl[t] || []).forEach(f => f({ target: this })); }, querySelectorAll: s => (s === 'track' ? trackEls : []), getBoundingClientRect: () => ({ width: 640, height: 360 }), parentElement: player, closest: () => player };
+  // bar: 'yt' = nhóm nút phải YouTube (.ytp-right-controls); 'generic' = trình phát kiểu Udemy: dãy nút trái (Play) + dãy nút phải
+  // (barEl > [wrapA > Settings, wrapB > Fullscreen]); logo phải đứng đầu barEl.
+  const barEl = mkEl(), playBtn = mkEl(), wrapA = mkEl(), setBtn = mkEl(), leftBar = mkEl(), leftBtn = mkEl();
+  const asBtn = (b, label, left) => { b.isBtn = true; b.offsetWidth = 40; b.offsetHeight = 40; b.setAttribute('aria-label', label); b.getBoundingClientRect = () => ({ left, right: left + 40, top: 315, bottom: 355, width: 40, height: 40 }); return b; };
+  if (bar === 'yt') { barEl.appendChild(playBtn); player.appendChild(barEl); player.querySelector = s => (/ytp-right-controls/.test(s) ? barEl : null); }
+  if (bar === 'generic') {
+    leftBar.appendChild(asBtn(leftBtn, 'Play', 10)); player.appendChild(leftBar);
+    wrapA.appendChild(asBtn(setBtn, 'Settings', 560)); barEl.appendChild(wrapA);
+    const wrapB = mkEl(); wrapB.appendChild(asBtn(playBtn, 'Fullscreen', 600)); barEl.appendChild(wrapB);
+    player.appendChild(barEl);
+  }
+  const video = { currentTime: 0, currentSrc: videoSrc, paused: false, volume: 1, muted: false, vl: {}, addEventListener(t, f) { (this.vl[t] = this.vl[t] || []).push(f); }, fire(t) { (this.vl[t] || []).forEach(f => f({ target: this })); }, querySelectorAll: s => (s === 'track' ? trackEls : []), getBoundingClientRect: () => ({ left: 0, top: 0, right: 640, bottom: 360, width: 640, height: 360 }), parentElement: player, closest: () => player };
   const fetched = [];
   const HOST = { youtube: 'www.youtube.com', udemy: 'www.udemy.com', coursera: 'www.coursera.org', dlai: 'learn.deeplearning.ai' }[site];
   const loc = site === 'youtube' ? { href: 'https://www.youtube.com/watch?v=' + pageV, search: '?v=' + pageV, pathname: '/watch' }
@@ -71,8 +86,8 @@ function fakePage({ pageV = 'MAIN', ccPressed = 'false', voice = 'auto', geminiK
   const diag = () => new Promise(r => msgListener({ type: 'diag' }, {}, r));
   const fireChange = ch => changeL.forEach(f => f(ch, 'local'));
   const status = () => new Promise(r => msgListener({ type: 'status' }, {}, r));
-  const btn = () => player.children.find(c => c.classList.contains('bsub-btn')) || null;
-  return { ctx, video, ccBtn, sent, postCaptions, postVtt, posted, fetched, diag, fireChange, status, btn, player, store };
+  const btn = () => [player, barEl].flatMap(e => e.children).find(c => c.classList && c.classList.contains('bsub-btn')) || null;
+  return { barEl, playBtn, ctx, video, ccBtn, sent, postCaptions, postVtt, posted, fetched, diag, fireChange, status, btn, player, store };
 }
 
 (async () => {
@@ -925,9 +940,41 @@ function fakePage({ pageV = 'MAIN', ccPressed = 'false', voice = 'auto', geminiK
     await sleep(700);
     check('rê chuột (bật): gợi ý "Tắt lồng tiếng"', P.btn().getAttribute('data-tip') === 'Tắt lồng tiếng', P.btn().attrs);
     check('CSS: logo không mở rộng khi rê chuột', !/\.bsub-btn:hover\s*\{[^}]*font-size:\s*13px/.test(css));
-    check('CSS: gợi ý hiện từ data-tip', /content:\s*attr\(data-tip\)/.test(css));
+    // Gợi ý là phần tử riêng gắn vào trình phát (thanh điều khiển YouTube có overflow:hidden, ::after bị cắt).
+    P.btn().fire('mouseenter');
+    const tipEl = () => P.player.children.find(c => c.classList && c.classList.contains('bsub-tip'));
+    check('rê chuột: hiện gợi ý trong trình phát', tipEl() && tipEl().classList.contains('bsub-tip-on') && tipEl().textContent === 'Tắt lồng tiếng', tipEl() && tipEl().textContent);
+    P.btn().fire('mouseleave');
+    check('rời chuột: ẩn gợi ý', tipEl() && !tipEl().classList.contains('bsub-tip-on'));
+    check('CSS: không dùng ::after cho gợi ý (bị cắt trong thanh điều khiển)', !/bsub-btn[^{]*::after/.test(css) && /\.bsub-tip\s*\{/.test(css));
     const btnRules = (css.match(/\.bsub-btn(\.bsub-on)?(:hover)?\s*\{[^}]*\}/g) || []).join('\n');
     check('CSS: chỉ có logo, không khung / nền / viền', !/rgba\(|box-shadow:\s*0|border-radius:\s*1\dpx|padding:\s*[1-9]/.test(btnRules), btnRules);
+  }
+
+  console.log('45. Logo là nút đầu tiên của nhóm nút bên phải trong thanh điều khiển (giống YouTube Dubbing)');
+  {
+    const Y = fakePage({ ccPressed: 'false', autoDub: false, bar: 'yt' });
+    await sleep(700);
+    const yi = Y.barEl.children.indexOf(Y.btn());
+    check('YouTube: logo đứng đầu .ytp-right-controls', yi === 0 && Y.barEl.children[1] === Y.playBtn, Y.barEl.children.length);
+    check('YouTube: logo có lớp bsub-inbar', Y.btn() && Y.btn().classList.contains('bsub-inbar'));
+    await sleep(700);
+    check('YouTube: không chèn lặp mỗi nhịp', Y.barEl.children.filter(c => c.classList && c.classList.contains('bsub-btn')).length === 1);
+    const U = fakePage({ site: 'udemy', ccPressed: 'false', autoDub: false, bar: 'generic' });
+    await sleep(700);
+    const ui = U.barEl.children.indexOf(U.btn());
+    check('Udemy/Coursera/DLAI: logo đứng ngoài cùng trái của cả dãy nút phải', ui === 0 && U.barEl.children.length === 3, [ui, U.barEl.children.length]);
+    check('Udemy/Coursera/DLAI: logo cùng cỡ nút bên cạnh', U.btn().style['--bsub-w'] === '40px' && U.btn().style['--bsub-h'] === '40px', U.btn().style);
+    check('Udemy/Coursera/DLAI: không nhảy sang dãy nút trái', !U.player.children[0].children.includes(U.btn()));
+    const N = fakePage({ ccPressed: 'false', autoDub: false });
+    await sleep(700);
+    check('không thấy thanh điều khiển: vẫn có nút (nổi trên video)', N.btn() && !N.btn().classList.contains('bsub-inbar'));
+    const css = fs.readFileSync(path.join(DIR, 'content/content.css'), 'utf8');
+    check('CSS có kiểu cho logo trong thanh điều khiển', /\.bsub-btn\.bsub-inbar\s*\{[^}]*position:\s*relative/.test(css));
+    const logoRule = (/\.bsub-btn\.bsub-inbar::before\s*\{([^}]*)\}/.exec(css) || [])[1] || '';
+    check('CSS: logo bo góc + cắt vành sáng của ảnh (phóng >100%)', /border-radius/.test(logoRule) && /\/\s*1[1-4]\d%/.test(logoRule), logoRule);
+    check('CSS: cỡ nút theo nút bên cạnh (biến --bsub-w/--bsub-h)', /var\(--bsub-w/.test(css) && /var\(--bsub-h/.test(css));
+    check('gợi ý căn giữa trên logo', /r\.width\s*\/\s*2/.test(fs.readFileSync(path.join(DIR, 'content/content.js'), 'utf8')));
   }
 
   console.log('44. learn.deeplearning.ai: lấy phụ đề WebVTT từ danh sách HLS (.m3u8) của video');

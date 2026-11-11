@@ -15,13 +15,26 @@ html.bsub-hide-native .ytp-caption-window-container { display: none !important; 
 /* Đang bật: logo đủ màu; đang tắt: logo xám. */
 .bsub-host > .bsub-btn.bsub-on { filter: none; }
 .bsub-host > .bsub-btn:hover { filter: brightness(1.15); }
-/* Rê chuột vào logo: hiện "Bật lồng tiếng" / "Tắt lồng tiếng" phía trên. */
-.bsub-host > .bsub-btn::after {
-  content: attr(data-tip); position: absolute; right: 0; bottom: calc(100% + 8px);
-  padding: 6px 10px; border-radius: 6px; white-space: nowrap; pointer-events: none;
+/* Logo ngoài cùng bên trái dãy nút phải của thanh điều khiển: khung cùng cỡ nút bên cạnh (--bsub-w/--bsub-h, đặt bằng JS),
+   logo căn giữa, cỡ như biểu tượng bên cạnh (--bsub-logo). Ảnh logo có vành sáng quanh mép: phóng 124% trong ô bo góc để cắt đi. */
+.bsub-btn.bsub-inbar {
+  position: relative; right: auto; bottom: auto; z-index: auto;
+  display: inline-flex; align-items: center; justify-content: center; flex: none; vertical-align: top;
+  width: var(--bsub-w, 48px); height: var(--bsub-h, 40px); margin: 0; padding: 0; border: 0;
+  background: none; box-shadow: none; color: transparent; font-size: 0; cursor: pointer; opacity: 1; pointer-events: auto;
+}
+.bsub-btn.bsub-inbar::before {
+  content: ""; display: block; flex: none; width: var(--bsub-logo, 24px); height: var(--bsub-logo, 24px); border-radius: 22%;
+  background: url("chrome-extension://__MSG_@@extension_id__/icons/icon128.png") center / 124% no-repeat;
+  filter: grayscale(1) opacity(0.85); transition: filter 0.2s;
+}
+.bsub-btn.bsub-inbar.bsub-on::before, .bsub-btn.bsub-inbar:hover::before { filter: none; }
+/* Gợi ý "Bật/Tắt lồng tiếng" khi rê chuột vào logo (phần tử riêng trong trình phát, không bị thanh điều khiển cắt). */
+.bsub-tip {
+  position: absolute; z-index: 80; padding: 6px 10px; border-radius: 6px; white-space: nowrap; pointer-events: none;
   background: rgba(28, 28, 28, 0.9); color: #fff; font: 500 13px/1.2 Roboto, Arial, sans-serif;
   opacity: 0; transition: opacity 0.15s;
 }
-.bsub-host > .bsub-btn:hover::after, .bsub-host > .bsub-btn:focus-visible::after { opacity: 1; }
+.bsub-tip.bsub-tip-on { opacity: 1; }
 /* YouTube ẩn thanh điều khiển khi chuột đứng yên: ẩn nút theo. */
 .html5-video-player.ytp-autohide > .bsub-btn:not(:hover) { opacity: 0; }

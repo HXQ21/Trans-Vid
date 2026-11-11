@@ -675,6 +675,66 @@
     return h;
   }
 
+  // Dãy nút bên phải của thanh điều khiển (giống YouTube Dubbing: logo đứng ngoài cùng bên trái của dãy, trước CC / cài đặt / toàn màn hình).
+  // YouTube có lớp riêng. Trang khác: tìm nút toàn màn hình / cài đặt / phụ đề ở đáy, nửa phải video, rồi đi ngược lên
+  // tới khung lớn nhất mà mọi nút bên trong vẫn nằm ở nửa phải (= cả dãy nút phải, không lẫn nút Play bên trái).
+  function rightControlsIn(v, host) {
+    if (IS_YT) return host.querySelector ? host.querySelector('.ytp-right-controls') : null;
+    if (!host.querySelectorAll) return null;
+    const r = v.getBoundingClientRect(), mid = r.left + r.width / 2;
+    const isCtl = q => q && q.width && q.bottom > r.bottom - 100 && q.top < r.bottom + 60;
+    const btns = el => Array.from(el.querySelectorAll('button, [role="button"]')).filter(b => b !== btnEl && b.getBoundingClientRect);
+    for (const b of btns(host)) {
+      const name = [b.getAttribute('aria-label'), b.getAttribute('data-purpose'), b.getAttribute('title'), typeof b.className === 'string' ? b.className : ''].join(' ');
+      if (!/full\s*-?screen|settings|caption|subtitle|toàn màn hình|cài đặt|phụ đề/i.test(name)) continue;
+      const q = b.getBoundingClientRect();
+      if (!isCtl(q) || q.left <= mid || !b.parentElement) continue;
+      let row = b.parentElement;
+      for (let p = row.parentElement, i = 0; p && p !== host && i < 5; p = p.parentElement, i++) {
+        if (btns(p).some(x => { const o = x.getBoundingClientRect(); return isCtl(o) && o.left < mid; })) break;
+        row = p;
+      }
+      return row;
+    }
+    return null;
+  }
+
+  // Cỡ nút = cỡ nút bên cạnh trong dãy; logo khoảng 60% chiều cao (YouTube: khung 48×40, logo 24px như biểu tượng CC).
+  function fitToRow(group) {
+    const nb = Array.from(group.querySelectorAll ? group.querySelectorAll('button, [role="button"]') : []).find(x => x !== btnEl && x.offsetWidth);
+    if (!nb || !btnEl.style.setProperty) return;
+    const w = nb.offsetWidth, h = nb.offsetHeight;
+    btnEl.style.setProperty('--bsub-w', w + 'px');
+    btnEl.style.setProperty('--bsub-h', h + 'px');
+    btnEl.style.setProperty('--bsub-logo', Math.max(18, Math.min(28, Math.round(h * 0.6))) + 'px');
+  }
+
+  // Gợi ý "Bật/Tắt lồng tiếng" khi rê chuột: phần tử riêng gắn vào trình phát
+  // (thanh điều khiển YouTube có overflow:hidden nên ::after của nút bị cắt).
+  let tipEl = null;
+  const rectOf = e => (e && e.getBoundingClientRect ? e.getBoundingClientRect() : { left: 0, top: 0, right: 0, bottom: 0 });
+  function showTip() {
+    if (!btnEl || !video) return;
+    const host = hostFor(video);
+    if (!host) return;
+    if (!tipEl) { tipEl = document.createElement('div'); tipEl.classList.add('bsub-tip'); }
+    if (tipEl.parentNode !== host) {
+      host.appendChild(tipEl);
+      if (getComputedStyle(host).position === 'static') host.style.position = 'relative';
+    }
+    tipEl.textContent = btnEl.getAttribute('data-tip') || '';
+    const h = rectOf(host), r = rectOf(btnEl);
+    // Không để gợi ý tràn khỏi mép phải trình phát (trình phát có overflow:hidden).
+    const w = tipEl.offsetWidth || 0, hw = (h.right - h.left) || 0;
+    // Căn giữa ngay trên logo; không để tràn khỏi mép trình phát (trình phát có overflow:hidden).
+    let left = Math.round(r.left - h.left + r.width / 2 - w / 2);
+    if (hw && w && left + w > hw - 4) left = hw - 4 - w;
+    tipEl.style.left = Math.max(4, left) + 'px';
+    tipEl.style.bottom = Math.round(h.bottom - r.top + 8) + 'px';
+    tipEl.classList.add('bsub-tip-on');
+  }
+  function hideTip() { if (tipEl) tipEl.classList.remove('bsub-tip-on'); }
+
   function updateButton() {
     const v = video;
     if (!cfg.enabled || !v) { if (btnEl) btnEl.style.display = 'none'; return; }
@@ -687,8 +747,21 @@
       // Không để trình phát nhận cú bấm (YouTube bấm vào khung = tạm dừng).
       for (const t of ['mousedown', 'mouseup', 'pointerdown', 'pointerup', 'dblclick', 'touchstart', 'keydown']) btnEl.addEventListener(t, e => e.stopPropagation());
       btnEl.addEventListener('click', e => { e.preventDefault(); e.stopPropagation(); toggleDub(); });
+      btnEl.addEventListener('mouseenter', showTip);
+      btnEl.addEventListener('mouseleave', hideTip);
+      btnEl.addEventListener('focus', showTip);
+      btnEl.addEventListener('blur', hideTip);
     }
-    if (btnEl.parentNode !== host) {
+    // Ưu tiên đặt logo ngoài cùng bên trái dãy nút phải của thanh điều khiển.
+    // Không thấy thanh điều khiển thì để nổi ở góc video như trước.
+    const inBar = btnEl.classList.contains('bsub-inbar') && btnEl.parentNode && host.contains(btnEl);
+    const group = inBar ? null : rightControlsIn(v, host);
+    if (group) {
+      if (group.firstChild !== btnEl) group.insertBefore(btnEl, group.firstChild || null);
+      btnEl.classList.add('bsub-inbar');
+      fitToRow(group);
+    } else if (!inBar && btnEl.parentNode !== host) {
+      btnEl.classList.remove('bsub-inbar');
       host.appendChild(btnEl);
       host.classList.add('bsub-host');
       if (getComputedStyle(host).position === 'static') host.style.position = 'relative';
@@ -708,7 +781,10 @@
     btnEl.classList.toggle('bsub-on', on);
     // Gợi ý khi rê chuột (CSS ::after đọc data-tip). Không dùng title để trình duyệt không hiện thêm gợi ý thứ hai.
     const tip = on ? 'Tắt lồng tiếng' : 'Bật lồng tiếng';
-    if (btnEl.getAttribute('data-tip') !== tip) btnEl.setAttribute('data-tip', tip);
+    if (btnEl.getAttribute('data-tip') !== tip) {
+      btnEl.setAttribute('data-tip', tip);
+      if (tipEl && tipEl.classList.contains('bsub-tip-on')) tipEl.textContent = tip;
+    }
     if (btnEl.getAttribute('aria-label') !== label) btnEl.setAttribute('aria-label', label);
   }
 
