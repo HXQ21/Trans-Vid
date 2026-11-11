@@ -56,7 +56,7 @@ lib/
   voices.js            danh sách giọng, nghe thử
 popup/                 cửa sổ khi bấm icon
 options/               trang Cài đặt
-styles/                Pico CSS + giao diện
+styles/                giao diện (ui.css)
 icons/                 logo
 tests/test_extension.js  bộ test (chạy mã thật trong môi trường giả, không cần Chrome)
 tools/sync_ps1.py      đồng bộ script tạo extension (.ps1)
@@ -77,4 +77,3 @@ node tests/test_extension.js
 
 ## Ghi công
 
-- Giao diện dùng [Pico CSS](https://picocss.com) v2.1.1 (giấy phép MIT), chép sẵn trong `styles/pico.min.css`.

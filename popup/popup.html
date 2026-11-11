@@ -3,42 +3,54 @@
 <head>
   <meta charset="utf-8">
   <meta name="color-scheme" content="light dark">
-  <link rel="stylesheet" href="../styles/pico.min.css">
   <link rel="stylesheet" href="../styles/ui.css">
 </head>
 <body class="popup">
-  <header class="top">
-    <div class="brand">
+  <div class="card">
+    <header class="top">
       <img class="logo" src="../icons/icon48.png" alt="">
-      <div><strong>TransVid</strong><small id="ver"></small></div>
+      <div class="name">TransVid<small id="ver"></small></div>
+      <label class="switch" title="Bật / tắt TransVid">
+        <input type="checkbox" id="enabled" aria-label="Bật TransVid"><span></span>
+      </label>
+    </header>
+
+    <section>
+      <div class="state"><p id="progress"></p><span id="pct"></span></div>
+      <div class="bar" id="barWrap" hidden><i id="bar"></i></div>
+      <div id="engine" class="muted"></div>
+      <p id="err" class="warn" hidden></p>
+    </section>
+
+    <div class="row sep">
+      <span class="lbl">Giọng</span>
+      <select id="voice" aria-label="Giọng đọc"></select>
+      <button id="preview" class="icon" title="Nghe thử" aria-label="Nghe thử">
+        <svg viewBox="0 0 24 24"><path d="M7 4v16l13-8z"/></svg>
+      </button>
     </div>
-    <input type="checkbox" role="switch" id="enabled" aria-label="Bật lồng tiếng" title="Bật / tắt toàn bộ extension">
-  </header>
+    <small id="voiceInfo" class="muted" hidden></small>
+    <small id="previewMsg" class="muted" hidden></small>
 
-  <article class="status">
-    <p id="progress"></p>
-    <small id="engine" class="muted"></small>
-    <p id="err" class="warn" hidden></p>
-  </article>
+    <div class="row">
+      <span class="ic" title="Âm lượng giọng đọc"><svg viewBox="0 0 24 24"><path d="M11 5 6 9H3v6h3l5 4z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M18.5 5.5a9 9 0 0 1 0 13"/></svg></span>
+      <input type="range" id="voiceVolume" min="0" max="100" step="5" aria-label="Âm lượng giọng đọc">
+      <b id="voiceVolumeVal"></b>
+    </div>
 
-  <label for="voice">Giọng đọc</label>
-  <div class="voicerow" role="group">
-    <select id="voice"></select>
-    <button id="preview" title="Nghe thử" aria-label="Nghe thử">▶&#xFE0E;</button>
-  </div>
-  <small id="voiceInfo" class="muted"></small>
-  <small id="previewMsg" class="muted" hidden></small>
-
-  <label class="vol" for="voiceVolume"><span>Âm lượng giọng đọc</span><b id="voiceVolumeVal"></b></label>
-  <input type="range" id="voiceVolume" min="0" max="100" step="5">
-
-  <div class="btns">
-    <button id="retranslate" class="secondary outline">Dịch lại</button>
-    <button id="options" class="secondary outline">Cài đặt</button>
-    <button id="diag" class="secondary outline">Chẩn đoán</button>
+    <div class="actions sep">
+      <button id="retranslate">
+        <svg viewBox="0 0 24 24"><path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 4v7h-7"/></svg>Dịch lại
+      </button>
+      <button id="options" class="icon" title="Cài đặt" aria-label="Cài đặt">
+        <svg viewBox="0 0 24 24"><path d="M4 6h9M17 6h3M4 12h3M11 12h9M4 18h11M19 18h1"/><circle cx="15" cy="6" r="2"/><circle cx="9" cy="12" r="2"/><circle cx="17" cy="18" r="2"/></svg>
+      </button>
+      <button id="diag" class="icon" title="Chẩn đoán (sao chép nhật ký)" aria-label="Chẩn đoán">
+        <svg viewBox="0 0 24 24"><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></svg>
+      </button>
+    </div>
   </div>
   <textarea id="diagOut" readonly hidden></textarea>
-
   <script src="../lib/shared.js"></script>
   <script src="../lib/voices.js"></script>
   <script src="popup.js"></script>

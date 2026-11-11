@@ -1,4 +1,5 @@
 const $ = id => document.getElementById(id);
+let engineName = '', modeName = '';
 
 bsubGet().then(cfg => {
   $('enabled').checked = !!cfg.enabled;
@@ -26,11 +27,8 @@ bsubGet().then(cfg => {
     m.textContent = err;
     m.hidden = !err;
   };
-  $('engine').textContent = bsubUseRented(cfg)
-    ? 'Dịch bằng Vilao (' + cfg.apiModel + ')'
-    : cfg.geminiKey
-      ? 'Dịch bằng Gemini (tự chọn model còn lượt)'
-      : 'Dịch bằng Google Dịch (chưa có key Gemini)';
+  engineName = bsubUseRented(cfg) ? 'Vilao' : cfg.geminiKey ? 'Gemini' : 'Google Dịch';
+  modeName = cfg.readMode === 'full' ? 'đủ ý cả bài' : 'tự động';
 });
 
 $('options').onclick = () => chrome.runtime.openOptionsPage();
@@ -49,7 +47,7 @@ async function toTab(msg) {
 const WHY = {
   notab: 'Mở một video YouTube, Udemy, Coursera hoặc DeepLearning.AI để dùng.',
   notyt: 'Mở một video YouTube, Udemy, Coursera hoặc DeepLearning.AI để dùng.',
-  noaccess: 'Extension chưa được phép chạy trên YouTube: bấm chuột phải icon extension → "Có thể đọc và thay đổi dữ liệu trang web" → "Trên youtube.com", rồi tải lại trang (F5).',
+  noaccess: 'Chưa được phép đọc trang này: chuột phải icon TransVid → "Có thể đọc và thay đổi dữ liệu trang web" → cho phép, rồi F5.',
   noscript: 'Extension chưa chạy trong tab này: bấm F5 để tải lại trang video.'
 };
 
@@ -57,16 +55,25 @@ async function refresh() {
   const { r, why } = await toTab({ type: 'status' });
   const ver = chrome.runtime.getManifest().version;
   $('ver').textContent = 'v' + ver;
-  let text;
-  if (!r) text = WHY[why] || WHY.noscript;
-  else if (r.build !== ver) text = 'Tab này đang chạy mã cũ (' + (r.build ? 'v' + r.build : 'bản trước') + '). Bấm F5 để tải lại trang.';
-  else if (r.on === false) text = 'Chưa bật cho video này. Rê chuột vào video, bấm nút "Lồng tiếng" ở góc phải dưới.';
-  else if (r.unsupportedLang === 'vi-video') text = 'Video đã nói tiếng Việt, không cần lồng tiếng.';
-  else if (r.unsupportedLang) text = 'Không đọc được phụ đề "' + r.unsupportedLang + '".';
-  else if (!r.total) text = 'Chưa bắt được phụ đề. Phát video và đợi vài giây (video phải có phụ đề).';
-  else if (r.viDirect) text = 'Đang đọc phụ đề tiếng Việt có sẵn (' + r.total + ' câu, không cần dịch).';
-  else text = 'Đã dịch ' + r.done + '/' + r.total + ' câu (' + bsubLangName(r.lang) + ' → tiếng Việt)' + (r.failed ? ' · lỗi ' + r.failed : '');
+  // Trạng thái ngắn + thanh tiến độ dịch (mẫu A); dòng phụ: nguồn dịch · chế độ đọc.
+  let text, pct = -1, sub = engineName + ' · ' + modeName;
+  if (!r) { text = 'Chưa có video'; sub = WHY[why] || WHY.noscript; }
+  else if (r.build !== ver) { text = 'Tab đang chạy mã cũ'; sub = 'Bấm F5 để tải lại trang (v' + (r.build || '?') + ').'; }
+  else if (r.on === false) { text = 'Chưa bật cho video này'; sub = 'Bấm logo TransVid trên thanh điều khiển video.'; }
+  else if (r.unsupportedLang === 'vi-video') text = 'Video đã là tiếng Việt';
+  else if (r.unsupportedLang) text = 'Không đọc được phụ đề "' + r.unsupportedLang + '"';
+  else if (!r.total) { text = 'Đang tìm phụ đề…'; sub = 'Phát video vài giây (video phải có phụ đề).'; }
+  else if (r.viDirect) { text = 'Đọc phụ đề tiếng Việt'; pct = 100; sub = r.total + ' câu, không cần dịch'; }
+  else {
+    pct = Math.floor(r.done * 100 / r.total);
+    text = pct >= 100 ? 'Đang lồng tiếng' : 'Đang dịch';
+    sub = engineName + ' · ' + bsubLangName(r.lang) + ' → Việt · ' + modeName + (r.failed ? ' · lỗi ' + r.failed + ' câu' : '');
+  }
   $('progress').textContent = text;
+  $('pct').textContent = pct >= 0 ? pct + '%' : '';
+  $('barWrap').hidden = pct < 0;
+  $('bar').style.width = Math.max(0, pct) + '%';
+  $('engine').textContent = sub;
   $('err').hidden = !(r && r.error);
   $('err').textContent = (r && r.error) || '';
 }
@@ -115,5 +122,5 @@ $('diag').onclick = async () => {
   }
   out.value = lines.join('\n');
   out.select();
-  try { await navigator.clipboard.writeText(out.value); $('diag').textContent = 'Đã sao chép ✓'; } catch (e) { $('diag').textContent = 'Bôi đen & copy'; }
+  try { await navigator.clipboard.writeText(out.value); $('diag').title = 'Đã sao chép nhật ký ✓'; } catch (e) { $('diag').title = 'Bôi đen ô nhật ký rồi copy'; }
 };

@@ -4,71 +4,89 @@
   <meta charset="utf-8">
   <meta name="color-scheme" content="light dark">
   <title>Cài đặt — TransVid</title>
-  <link rel="stylesheet" href="../styles/pico.min.css">
   <link rel="stylesheet" href="../styles/ui.css">
 </head>
 <body class="options">
-  <main class="container">
+  <main>
     <header class="top">
-      <div class="brand">
-        <img class="logo" src="../icons/icon128.png" alt="">
-        <div><strong>Cài đặt TransVid</strong>
-          <small>Dịch phụ đề video YouTube, Udemy, Coursera, DeepLearning.AI sang tiếng Việt rồi đọc lên.</small></div>
-      </div>
+      <img class="logo" src="../icons/icon128.png" alt="">
+      <div class="name">TransVid<small>Lồng tiếng Việt cho YouTube, Udemy, Coursera, DeepLearning.AI</small></div>
     </header>
 
-    <article>
-      <header><strong>Bật lồng tiếng</strong></header>
-      <p class="muted">Mỗi video có nút <b>Lồng tiếng</b> ở góc phải dưới (rê chuột vào video để thấy).
-        Mặc định mọi video đều tắt: chỉ dịch và đọc khi bạn bấm nút. Video đã bật sẽ được nhớ.
-        Đang lồng tiếng thì tiếng gốc của video bị tắt hẳn; tắt lồng tiếng thì tiếng gốc trở lại.</p>
-      <label><input id="autoDub" type="checkbox" role="switch"> Tự bật cho mọi video (trừ video bạn đã bấm tắt)</label>
-    </article>
-
-    <article>
-      <header><strong>Dịch</strong></header>
-      <p class="muted">Có key Gemini thì dịch bằng Gemini (hay hơn); không có key hoặc Gemini lỗi thì tự dùng Google Dịch.</p>
-      <label for="geminiKey">Gemini API key <small class="muted">miễn phí, lấy ở aistudio.google.com/apikey — bỏ trống = dùng Google Dịch</small></label>
-      <input id="geminiKey" type="password" autocomplete="off">
-      <p class="muted">Model Gemini được chọn tự động: model nào hết lượt hoặc quá tải thì tự chuyển sang model flash khác còn lượt.</p>
-    </article>
-
-    <article>
-      <header><strong>Key Vilao</strong> <small class="muted">tuỳ chọn</small></header>
-      <p class="muted">Dán key Vilao thì dịch bằng Vilao (ưu tiên hơn key Gemini). Lỗi hoặc hết tiền thì tự dùng Google Dịch.
-        Phụ đề video sẽ được gửi tới máy chủ Vilao.</p>
-      <label for="apiKey">Key Vilao</label>
-      <input id="apiKey" type="password" autocomplete="off" placeholder="sk-…">
-    </article>
-
-    <article>
-      <header><strong>Giọng đọc</strong></header>
-      <label for="voice">Giọng</label>
-      <div class="voicerow" role="group">
-        <select id="voice"></select>
-        <button id="preview" type="button">▶&#xFE0E; Nghe thử</button>
-      </div>
-      <p class="muted">Nam Minh / Hoài My: trên trình duyệt <b>Edge</b> có sẵn, miễn phí, không cần key.
-        Trên Chrome cần key <b>Azure Speech</b> (gói miễn phí F0 tại portal.azure.com). Không có thì tự đọc bằng giọng Google.</p>
-      <div class="grid">
-        <div>
-          <label for="azureKey">Azure Speech key <small class="muted">tuỳ chọn</small></label>
-          <input id="azureKey" type="password" autocomplete="off">
+    <section class="group">
+      <h2>Dịch</h2>
+      <div class="panel">
+        <div class="item">
+          <div class="label">
+            <span class="title">Key Vilao <span class="tip" title="Có key thì dịch bằng Vilao (ưu tiên nhất). Phụ đề được gửi tới máy chủ Vilao. Lỗi hoặc hết tiền thì tự dùng Google Dịch.">i</span> <span class="badge" id="srcVilao" hidden>đang dùng</span></span>
+          </div>
+          <div class="ctl"><input id="apiKey" type="password" autocomplete="off" placeholder="sk-…" aria-label="Key Vilao"></div>
         </div>
-        <div>
-          <label for="azureRegion">Azure region <small class="muted">vd southeastasia</small></label>
-          <input id="azureRegion" placeholder="southeastasia">
+        <div class="item">
+          <div class="label">
+            <span class="title">Key Gemini <span class="tip" title="Miễn phí tại aistudio.google.com/apikey. Dùng khi không có key Vilao; tự chuyển model khi hết lượt.">i</span> <span class="badge" id="srcGemini" hidden>đang dùng</span></span>
+          </div>
+          <div class="ctl"><input id="geminiKey" type="password" autocomplete="off" placeholder="AIza…" aria-label="Key Gemini"></div>
+        </div>
+        <div class="item">
+          <div class="label">
+            <span class="title">Chế độ đọc <span class="tip" title="Tự động: câu nói nhanh dịch gọn cho khớp hình. Đủ ý cả bài: dịch đầy đủ mọi câu, không bỏ câu nào, giọng đọc nhanh hơn (có thể chậm hơn hình vài giây).">i</span></span>
+          </div>
+          <div class="ctl">
+            <select id="readMode" aria-label="Chế độ đọc">
+              <option value="auto">Tự động (khớp hình)</option>
+              <option value="full">Đủ ý cả bài</option>
+            </select>
+          </div>
+        </div>
+        <div class="item" id="srcGoogleRow" hidden>
+          <div class="label"><span class="title">Google Dịch <span class="badge">đang dùng</span></span><span class="hint">Chưa có key: dán key Vilao hoặc Gemini để dịch hay hơn.</span></div>
         </div>
       </div>
-    </article>
+    </section>
 
-    <div class="btns">
-      <button id="save">Lưu</button>
-      <button id="test" class="secondary">Lưu &amp; thử dịch</button>
-      <button id="clear" class="secondary outline">Xoá cache bản dịch</button>
+    <section class="group">
+      <h2>Lồng tiếng</h2>
+      <div class="panel">
+        <div class="item">
+          <div class="label"><span class="title">Tự bật cho mọi video <span class="tip" title="Tắt: chỉ lồng tiếng video bạn bấm logo TransVid trên thanh điều khiển. Video đã bấm được nhớ.">i</span></span></div>
+          <label class="switch"><input id="autoDub" type="checkbox" aria-label="Tự bật cho mọi video"><span></span></label>
+        </div>
+        <div class="item">
+          <div class="label"><span class="title">Giọng đọc</span></div>
+          <div class="ctl">
+            <select id="voice" aria-label="Giọng đọc"></select>
+            <button id="preview" class="icon" type="button" title="Nghe thử" aria-label="Nghe thử"><svg viewBox="0 0 24 24"><path d="M7 4v16l13-8z"/></svg></button>
+          </div>
+        </div>
+        <div class="item">
+          <div class="label">
+            <span class="title">Azure Speech <span class="tip" title="Tuỳ chọn: giọng Nam Minh / Hoài My trên Chrome (Edge có sẵn, không cần key). Gói miễn phí F0 tại portal.azure.com.">i</span></span>
+          </div>
+          <div class="ctl">
+            <input id="azureKey" type="password" autocomplete="off" placeholder="Key" aria-label="Azure Speech key">
+            <input id="azureRegion" placeholder="southeastasia" aria-label="Azure region" style="flex:0 0 120px">
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="group">
+      <h2>Khác</h2>
+      <div class="panel">
+        <div class="item">
+          <div class="label"><span class="title">Bản dịch đã lưu</span><span class="hint">Xoá để dịch lại mọi video từ đầu.</span></div>
+          <button id="clear" type="button">Xoá cache</button>
+        </div>
+      </div>
+    </section>
+
+    <div class="footer">
+      <button id="save" class="primary">Lưu</button>
+      <button id="test">Lưu và thử dịch</button>
     </div>
     <p id="msg"></p>
-    <p class="muted">Key chỉ lưu trên máy này (chrome.storage.local) và chỉ gửi tới đúng dịch vụ của nó (Google Gemini / nhà cung cấp key thuê / Azure).</p>
+    <p class="muted privacy">Key chỉ lưu trên máy này và chỉ gửi tới đúng dịch vụ của nó.</p>
   </main>
   <script src="../lib/shared.js"></script>
   <script src="../lib/voices.js"></script>

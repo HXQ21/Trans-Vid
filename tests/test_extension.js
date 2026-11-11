@@ -930,7 +930,7 @@ function fakePage({ pageV = 'MAIN', ccPressed = 'false', voice = 'auto', geminiK
     check('khoá cache dùng BSUB_PROMPT_VERSION', /cacheId\s*=.*BSUB_PROMPT_VERSION/.test(code));
     // Khoá cũ là hash('v5|' + cueKey + ...): bản này không được làm mất cache đã có.
     // Khoá cache = 'v' + BSUB_PROMPT_VERSION (5 = khoá 'v5|' cũ; tăng lên khi đổi prompt để dịch lại).
-    check('khoá cache theo BSUB_PROMPT_VERSION (định dạng v<số>|)', vm.runInContext('typeof BSUB_PROMPT_VERSION !== "undefined" && BSUB_PROMPT_VERSION', P.ctx) >= 5 && /hash\('v' \+ BSUB_PROMPT_VERSION \+ '\|' \+ cueKey/.test(code));
+    check('khoá cache theo BSUB_PROMPT_VERSION (định dạng v<số>|)', vm.runInContext('typeof BSUB_PROMPT_VERSION !== "undefined" && BSUB_PROMPT_VERSION', P.ctx) >= 5 && /hash\('v' \+ BSUB_PROMPT_VERSION \+ '\|' \+ (\(fullMode\(\) \? 'full\|' : ''\) \+ )?cueKey/.test(code));
   }
 
   console.log('42. Dọn cache: quá hạn (TTL) và vượt giới hạn (LRU)');
@@ -1185,6 +1185,9 @@ function fakePage({ pageV = 'MAIN', ccPressed = 'false', voice = 'auto', geminiK
     await sleep(300);
     const rq = (await Q.diag()).log.filter(l => /ĐỌC câu/.test(l)).map(l => +/ĐỌC câu (\d+)/.exec(l)[1]);
     check('câu chờ quá cũ thì bỏ, đọc câu còn kịp', rq.join(',') === '0,2', rq);
+    // Câu 2 đã qua giờ 2,5 giây (trong 4 giây cho phép): khi âm thanh về phải PHÁT, không bị bỏ vì "về trễ".
+    const ql = (await Q.diag()).log.join('\n');
+    check('câu chờ trong 4 giây cho phép: vẫn phát, không bỏ vì về trễ', !/âm thanh về trễ/.test(ql), ql.split('\n').slice(-6));
   }
 
   console.log('50. Tốc độ nói từng đoạn: câu nói nhanh -> dịch gọn (khớp hình), câu nói chậm -> đủ ý');
@@ -1218,6 +1221,37 @@ function fakePage({ pageV = 'MAIN', ccPressed = 'false', voice = 'auto', geminiK
     const sys = bodies[0] ? bodies[0].messages[0].content : '';
     check('gửi AI danh sách câu nói nhanh (khoá "2")', JSON.stringify(input.fast_speech_lines) === '["2"]', input.fast_speech_lines);
     check('prompt: câu nói nhanh dịch gọn nhưng không bỏ ý', /fast_speech_lines/.test(sys) && /concise/i.test(sys) && /never drop/i.test(sys), sys.slice(-600));
+  }
+
+  console.log('51. Chế độ đọc "Đủ ý cả bài": không dịch gọn, không bỏ câu, giọng được đọc nhanh hơn');
+  {
+    const sh = fs.readFileSync(path.join(DIR, 'lib/shared.js'), 'utf8');
+    check('mặc định readMode = auto', /readMode:\s*'auto'/.test(sh));
+    const html = fs.readFileSync(path.join(DIR, 'options/options.html'), 'utf8'), ojs = fs.readFileSync(path.join(DIR, 'options/options.js'), 'utf8');
+    check('Cài đặt có mục Chế độ đọc (auto / full)', /id="readMode"/.test(html) && /value="full"/.test(html) && /'readMode'/.test(ojs));
+    // Đủ ý cả bài: không gửi cờ nói nhanh (mọi câu dịch đầy đủ).
+    const P = fakePage({ ccPressed: 'true', store: { readMode: 'full' } });
+    await sleep(20);
+    P.postCaptions('MAIN', ['This is a slow and calm line.', 'So here we go really fast with many many words in this very short line now.']);
+    await sleep(400);
+    const m = P.sent.find(x => x.type === 'translate');
+    check('đủ ý cả bài: không câu nào bị đánh dấu dịch gọn', m && Array.isArray(m.fast) && !m.fast.includes(true), m && m.fast);
+    // Đủ ý cả bài: câu chờ dù đã quá giờ lâu vẫn đọc (không bỏ câu).
+    const Q = fakePage({ ccPressed: 'true', store: { readMode: 'full' } });
+    await sleep(20);
+    Q.postCaptions('MAIN', ['This is the first line here.', 'This is the second line here.', 'This is the third line here.']);
+    await sleep(400);
+    Q.video.currentTime = 0.2; Q.video.fire('timeupdate'); await sleep(300);
+    Q.video.currentTime = 3.2; Q.video.fire('timeupdate'); await sleep(150);
+    Q.video.currentTime = 6.2; Q.video.fire('timeupdate'); await sleep(150);
+    Q.video.currentTime = 11.5;
+    { const x = Q.audios[Q.audios.length - 1]; if (x && x.onended) x.onended(); }
+    await sleep(300);
+    const rq = (await Q.diag()).log.filter(l => /ĐỌC câu/.test(l)).map(l => +/ĐỌC câu (\d+)/.exec(l)[1]);
+    check('đủ ý cả bài: câu chờ quá giờ vẫn đọc (0,1)', rq.join(',') === '0,1', rq);
+    const cjs = fs.readFileSync(path.join(DIR, 'content/content.js'), 'utf8');
+    check('đủ ý cả bài: tốc độ giọng tối đa 2,5 lần', /readMode === 'full' \? 2\.5 : 2/.test(cjs));
+    check('đủ ý cả bài: cache riêng (khoá có "full|")', /cacheId = [^\n]*full\|/.test(cjs));
   }
 
   console.log('\n' + pass + ' đạt, ' + fail + ' lỗi');

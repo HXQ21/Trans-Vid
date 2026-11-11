@@ -55,7 +55,7 @@
       // nếu không sẽ xoá hết bản dịch và dịch lại từ đầu (tốn lượt Gemini).
       if (JSON.stringify(ch[k].oldValue) === JSON.stringify(ch[k].newValue)) continue;
       cfg[k] = ch[k].newValue;
-      if (k === 'geminiModel' || k === 'apiBase' || k === 'apiModel') clear = true;
+      if (k === 'geminiModel' || k === 'apiBase' || k === 'apiModel' || k === 'readMode') clear = true;
       if (k === 'geminiKey' || k === 'apiKey' || k === 'enabled') resume = true;
     }
     // Kéo thanh âm lượng trong popup: áp dụng ngay cho câu đang đọc.
@@ -372,7 +372,7 @@
         const before = cues.slice(Math.max(0, batch[0] - 8), batch[0]).map(c => ({ src: c.text, vi: c.tr || '' }));
         const title = (document.title || '').replace(/^\(\d+\)\s*/, '').replace(/\s*-\s*YouTube\s*$/, '');
         // Cờ nói nhanh từng câu: AI dịch gọn câu nói nhanh (khớp hình), dịch đủ ý câu nói chậm.
-        const fast = batch.map(i => bsubIsFastCue(cues[i]));
+        const fast = batch.map(i => !fullMode() && bsubIsFastCue(cues[i]));
         const nFast = fast.filter(Boolean).length;
         D('GỬI DỊCH câu ' + batch[0] + '–' + batch[batch.length - 1] + (nFast ? ' (nói nhanh ' + nFast + '/' + batch.length + ' câu: dịch gọn)' : ''));
         const sentAt = Date.now();
@@ -423,7 +423,7 @@
     if (!idx.length) return;
     const before = cues.slice(Math.max(0, idx[0] - 8), idx[0]).map(c => ({ src: c.text, vi: c.tr || '' }));
     const title = (document.title || '').replace(/^\(\d+\)\s*/, '').replace(/\s*-\s*YouTube\s*$/, '');
-    const r = await send({ type: 'translate', lang: cueLang, title, before, fast: idx.map(i => bsubIsFastCue(cues[i])), lines: idx.map(i => cues[i].text) });
+    const r = await send({ type: 'translate', lang: cueLang, title, before, fast: idx.map(i => !fullMode() && bsubIsFastCue(cues[i])), lines: idx.map(i => cues[i].text) });
     if (my !== gen) return;
     if (r.ok && r.via === 'gemini') {
       idx.forEach((i, k) => { if (r.translations[k]) { cues[i].tr = r.translations[k]; cues[i].via = 'gemini'; } });
@@ -456,7 +456,8 @@
     return (h >>> 0).toString(36) + '_' + s.length;
   }
   // 'v4': cache ghi kèm engine đã dịch mỗi câu (bản v3 trộn lẫn câu Google dự phòng vào cache Gemini).
-  const cacheId = () => 'cache:' + hash('v' + BSUB_PROMPT_VERSION + '|' + cueKey + '|vi|' + bsubAiId(cfg));
+  const fullMode = () => cfg.readMode === 'full';
+  const cacheId = () => 'cache:' + hash('v' + BSUB_PROMPT_VERSION + '|' + (fullMode() ? 'full|' : '') + cueKey + '|vi|' + bsubAiId(cfg));
 
   // Chỉ mục 'cacheIndex' { id: lần dùng gần nhất }: xoá cache quá 30 ngày (TTL), giữ tối đa 200 video (LRU).
   const CACHE_TTL = 30 * 864e5, CACHE_MAX = 200;
@@ -975,6 +976,9 @@
     return BSUB_MS_VOICES[sel] ? sel : 'google';
   }
 
+  // Tốc độ giọng tối đa: đủ ý cả bài cho đọc nhanh hơn để đuổi kịp hình.
+  const maxRate = () => (cfg.readMode === 'full' ? 2.5 : 2);
+
   function dubCue(idx) {
     const c = cues[idx];
     stopDub(true);
@@ -992,7 +996,7 @@
       // Đọc lần lượt các câu đang chờ; câu đã quá giờ hơn QUEUE_SLACK giây thì bỏ (giọng đọc tự tăng tốc để đuổi kịp).
       while (dubQueue.length) {
         const p = dubQueue.shift();
-        if (cues[p] && cues[p].tr && cfg.enabled && video && !video.paused && video.currentTime < cues[p].end + QUEUE_SLACK) { dubCue(p); return; }
+        if (cues[p] && cues[p].tr && cfg.enabled && video && !video.paused && (fullMode() || video.currentTime < cues[p].end + QUEUE_SLACK)) { dubCue(p); return; }
         D('  bỏ câu ' + p + ' (đã quá giờ)');
       }
     };
@@ -1004,15 +1008,16 @@
       const rv = remoteVoice();
       getTts(idx, rv).then(url => {
         if (token !== dubToken) return;
-        // Âm thanh về trễ, câu đã qua: bỏ, chuyển sang câu đang chờ.
-        if (!url || !video || video.paused || video.currentTime >= c.end) {
+        // Âm thanh về trễ, câu đã qua quá QUEUE_SLACK giây: bỏ, chuyển sang câu đang chờ (cùng mốc với hàng đợi;
+        // trước đây dùng mốc cuối câu nên câu chờ trong thời gian cho phép vẫn bị bỏ). Đủ ý cả bài: không bỏ.
+        if (!url || !video || video.paused || (!fullMode() && video.currentTime >= c.end + QUEUE_SLACK)) {
           D('  bỏ qua: ' + (!url ? 'không có âm thanh' : !video ? 'không có video' : video.paused ? 'video dừng' : 'âm thanh về trễ, câu đã qua'));
           done(); return;
         }
         const a = new Audio(url);
         a.volume = voiceVol();
         audio = a;
-        a.onloadedmetadata = () => { if (isFinite(a.duration)) a.playbackRate = Math.min(2, Math.max(1, a.duration / timeLeft())); };
+        a.onloadedmetadata = () => { if (isFinite(a.duration)) a.playbackRate = Math.min(maxRate(), Math.max(1, a.duration / timeLeft())); };
         a.onplaying = () => D('  PHÁT âm thanh (vol giọng=' + a.volume.toFixed(2) + ', vol video=' + video.volume.toFixed(2) + (video.muted ? ' TAB VIDEO MUTED' : '') + ')');
         a.onended = () => { D('  xong'); done(); };
         a.onerror = () => { D('  LỖI phát mã ' + (a.error && a.error.code)); lastError = 'Lỗi phát giọng đọc (mã ' + (a.error && a.error.code) + ')'; done(); };
@@ -1033,7 +1038,7 @@
     u.voice = voice;
     u.lang = voice.lang;
     u.volume = voiceVol();
-    u.rate = Math.min(2, Math.max(1, c.tr.length / 15 / timeLeft()));
+    u.rate = Math.min(maxRate(), Math.max(1, c.tr.length / 15 / timeLeft()));
     u.onstart = () => D('  giọng máy BẮT ĐẦU đọc');
     u.onend = () => { D('  giọng máy xong'); done(); };
     u.onerror = e => { D('  giọng máy LỖI: ' + (e && e.error)); done(); };

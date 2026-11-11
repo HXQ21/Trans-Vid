@@ -1,12 +1,23 @@
 const $ = id => document.getElementById(id);
-const FIELDS = ['geminiKey', 'apiKey', 'voice', 'azureKey', 'azureRegion'];
+const FIELDS = ['geminiKey', 'apiKey', 'voice', 'azureKey', 'azureRegion', 'readMode'];
 const hasAzure = () => !!$('azureKey').value.trim();
+
+// Nhãn "đang dùng" cho nguồn dịch: Vilao > Gemini > Google Dịch.
+function showSource() {
+  const vilao = !!$('apiKey').value.trim(), gemini = !vilao && !!$('geminiKey').value.trim();
+  $('srcVilao').hidden = !vilao;
+  $('srcGemini').hidden = !gemini;
+  $('srcGoogleRow').hidden = vilao || gemini;
+}
 
 bsubGet().then(cfg => {
   bsubFillVoices($('voice'), cfg.voice, !!cfg.azureKey);
   for (const k of FIELDS) $(k).value = cfg[k];
   $('autoDub').checked = !!cfg.autoDub;
+  showSource();
 });
+$('apiKey').addEventListener('input', showSource);
+$('geminiKey').addEventListener('input', showSource);
 $('autoDub').addEventListener('change', async () => {
   await chrome.storage.local.set({ autoDub: $('autoDub').checked });
   note('Đã tự lưu.');
