@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "TransVid",
-  "version": "3.8.0",
+  "version": "3.8.1",
   "description": "Lồng tiếng Việt cho video YouTube, Udemy, Coursera, DeepLearning.AI: đọc thẳng phụ đề Việt nếu có, không thì dịch bằng Gemini (hoặc Google Dịch).",
   "permissions": [
     "storage",

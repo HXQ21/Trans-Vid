@@ -1254,6 +1254,16 @@ function fakePage({ pageV = 'MAIN', ccPressed = 'false', voice = 'auto', geminiK
     check('đủ ý cả bài: cache riêng (khoá có "full|")', /cacheId = [^\n]*full\|/.test(cjs));
   }
 
+  console.log('52. Nhớ video đã bấm bật/tắt sau khi tải lại trang (dubVideos phải có trong BSUB_DEFAULTS)');
+  {
+    // chrome.storage.local.get(BSUB_DEFAULTS) chỉ trả về các khoá có trong BSUB_DEFAULTS.
+    const c = { console, chrome: { storage: { local: { get() {} } } } };
+    vm.createContext(c);
+    vm.runInContext(fs.readFileSync(path.join(DIR, 'lib/shared.js'), 'utf8') + ';this.D = BSUB_DEFAULTS;', c);
+    check('BSUB_DEFAULTS có dubVideos (mặc định {})', 'dubVideos' in c.D && c.D.dubVideos && typeof c.D.dubVideos === 'object' && !Object.keys(c.D.dubVideos).length, Object.keys(c.D));
+    check('autoDub vẫn mặc định tắt', c.D.autoDub === false);
+  }
+
   console.log('\n' + pass + ' đạt, ' + fail + ' lỗi');
   process.exit(fail ? 1 : 0);
 })();
