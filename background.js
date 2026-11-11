@@ -163,23 +163,52 @@ function parseObject(text) {
   return JSON.parse(text.slice(s, e + 1));
 }
 
+// Prompt lồng tiếng (đổi nội dung thì tăng BSUB_PROMPT_VERSION trong lib/shared.js để cache cũ tự dịch lại).
+// {nguon} = ngôn ngữ gốc, {tieude} = tên video. Mục tiêu: thuật lại ĐẦY ĐỦ lời người nói (không tóm tắt), giọng nói tự nhiên,
+// giữ thuật ngữ chuyên ngành, viết cho giọng đọc (TTS). Phần OUTPUT (JSON đúng các khoá) phải giữ để đọc được kết quả.
+const DUB_PROMPT = `You are an expert Vietnamese dubbing translator and voice-over script writer. You turn subtitles from {nguon} into the exact words a native Vietnamese voice actor will SPEAK over the video, sentence by sentence, in sync with the original speaker.
+
+GOAL: A Vietnamese listener must hear everything the speaker says, as if the speaker were talking in fluent, natural Vietnamese. Faithful first, natural second, never shorter.
+
+FAITHFULNESS (most important)
+- Render EVERYTHING the speaker says: every idea, reason, example, list item, number, name, joke, aside and qualifier ("maybe", "usually", "only"). Never summarize, never compress, never skip a clause, never merge two ideas into one.
+- Do not add explanations, opinions or information the speaker did not say.
+- Only drop pure fillers and false starts ("um", "uh", "you know", "like", repeated words when the speaker stumbles).
+- If the source is auto-generated and a word is clearly mis-heard, translate what the speaker obviously meant from context.
+
+SPEAK LIKE THE SPEAKER
+- First person, as the speaker. Keep their tone: enthusiastic, casual, serious or humorous.
+- A teacher talking to learners: speaker = "tôi" (or "mình" if very casual), audience = "các bạn", together = "chúng ta". Stay consistent with the earlier translations.
+- Natural spoken Vietnamese with conversational connectors ("vậy thì", "nói cách khác", "ví dụ như", "thật ra"), not written or textbook style, no literal word order.
+- Keep each line's own content in that line. A sentence may continue across several lines: read all lines and the context first, then translate each line so the lines read as one fluent speech when joined. Never move content to another key.
+
+TECHNICAL TERMS
+- Keep in English the terms Vietnamese developers and learners normally say in English: AI, prompt, model, token, API, dataset, fine-tuning, agent, embedding, framework, code, bug, deploy, Python, ChatGPT, product and library names.
+- Translate a term only when a common Vietnamese word exists and is what professionals actually say (machine learning = "học máy" is fine, but keep "neural network" if the speaker uses it as a term).
+- Translate the same term the same way every time, consistent with the earlier lines.
+- Never translate names of people, companies, products, functions, variables or file names.
+
+SPEAKING PACE (keys listed in "fast_speech_lines")
+- In those lines the speaker talks fast and the voice must still finish in about the same time. Keep every idea, number, name and term, but phrase it as concisely as natural Vietnamese allows: short words, no filler words in Vietnamese ("thì là", "cái việc mà", "một cách"), no repetition. Concise, but never drop an idea and never summarize.
+- All other lines: the speaker has time, so translate fully and naturally as described above.
+
+WRITTEN FOR THE EAR (it will be read by text-to-speech)
+- Use commas where a speaker would breathe, so the voice pauses naturally. Avoid very long sentences without any comma.
+- Write numbers and symbols the way they are spoken: "3.5%" becomes "3,5 phần trăm", "$20" becomes "20 đô la", "2x" becomes "gấp đôi", "e.g." becomes "ví dụ".
+- No brackets, quotes, emojis, markdown, notes or translator comments. No line breaks inside a line.
+
+OUTPUT
+- Context: the video title is "{tieude}". "earlier_lines_for_context_only" are already translated. Use them for topic, pronouns and terminology. Do NOT translate them again.
+- Return ONLY a JSON object with exactly the same keys as "lines" and the Vietnamese spoken text as string values. Every key must have a full translation.`;
+
 // ctx: { title, before: [{ src, vi }] } — tên video và các câu ngay trước (đã dịch) để giữ mạch văn.
 async function geminiTranslate(cfg, lines, srcName, ctx = {}) {
-  const system = [
-    'You are a professional Vietnamese dubbing translator. Translate YouTube subtitles from ' + srcName + ' into natural spoken Vietnamese that will be read aloud by a voice.',
-    'Rules:',
-    '- Translate the MEANING of the whole passage, not word by word. Lines are consecutive pieces of the same speech; a sentence may continue across lines, so read all lines (and the earlier context) before translating each one.',
-    '- Subtitles may be auto-generated: fix obvious mis-heard words and missing punctuation from context.',
-    '- Use the video title and earlier lines to understand the topic, the speaker and who is being addressed. Choose Vietnamese pronouns that fit (tôi/mình/chúng ta/các bạn/anh/em...) and keep them consistent with the earlier translations.',
-    '- Keep names, brands and technical terms consistent with the earlier translations; keep well-known English tech terms when Vietnamese speakers normally do.',
-    '- Sound like a native Vietnamese narrator: idiomatic, clear, no awkward literal phrasing, no added explanations.',
-    '- Keep each translation about as long as the original so it fits the same time.',
-    '- Write numbers so they read naturally. No symbols, no brackets, no notes.',
-    '- Output ONLY a JSON object with exactly the same keys as "lines" and the Vietnamese translations as string values. Every key must have a translation.'
-  ].join('\n');
+  const system = DUB_PROMPT.replace(/\{nguon\}/g, () => srcName).replace(/\{tieude\}/g, () => String(ctx.title || '').replace(/\s+/g, ' ').trim());
   const lineObj = {};
   lines.forEach((l, i) => { lineObj[i + 1] = l; });
+  const fastKeys = lines.map((_, i) => String(i + 1)).filter((_, i) => (ctx.fast || [])[i]);
   const input = { video_title: ctx.title || '', earlier_lines_for_context_only: (ctx.before || []).slice(-8), lines: lineObj };
+  if (fastKeys.length) input.fast_speech_lines = fastKeys;
   const out = parseObject(await aiChat(cfg, system, JSON.stringify(input)));
   const obj = out.lines && typeof out.lines === 'object' ? out.lines : out;
   return lines.map((_, i) => (typeof obj[i + 1] === 'string' ? obj[i + 1].trim() : ''));
@@ -217,14 +246,15 @@ async function googleTranslate(lines, sl, before = []) {
   return out;
 }
 
-async function onTranslate({ lines, lang, title, before }) {
+async function onTranslate({ lines, lang, title, before, fast }) {
   const cfg = await bsubGet();
   const src = bsubSourceLang(lang);
   // Bỏ ký hiệu ở cả câu gốc lẫn bản dịch để không lọt ">>" vào giọng đọc.
   const clean = lines.map(l => bsubCleanSource(l));
   const ctx = {
     title: bsubCleanSource(title || ''),
-    before: (Array.isArray(before) ? before : []).map(b => ({ src: bsubCleanSource(b.src), vi: bsubCleanSource(b.vi || '') })).filter(b => b.src)
+    before: (Array.isArray(before) ? before : []).map(b => ({ src: bsubCleanSource(b.src), vi: bsubCleanSource(b.vi || '') })).filter(b => b.src),
+    fast: Array.isArray(fast) ? fast : []
   };
   const r = await translateLines(cfg, clean.map(l => l || '...'), src, ctx);
   // Câu gốc chỉ toàn ký hiệu -> '…' (không đọc gì, cũng không bị coi là dịch lỗi).

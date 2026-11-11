@@ -9,7 +9,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
 function loadShared() {
   const ctx = { console, chrome: { storage: { local: { get() {} } } } };
   vm.createContext(ctx);
-  vm.runInContext(fs.readFileSync(path.join(DIR, 'lib/shared.js'), 'utf8') + '\n;this.S = {}; for (const n of ["bsubCleanSource", "bsubSpeakable", "bsubSourceLang", "bsubIsVi", "bsubIsAutoLabel", "bsubPickCaption", "bsubParseVtt", "bsubLangName", "bsubSegmentSentences", "bsubAiOn", "bsubAiId", "bsubNeededOrigins", "bsubParseHlsSubs", "bsubHlsSegments"]) { try { this.S[n] = eval(n); } catch (e) { this.S[n] = null; } }', ctx);
+  vm.runInContext(fs.readFileSync(path.join(DIR, 'lib/shared.js'), 'utf8') + '\n;this.S = {}; for (const n of ["bsubCleanSource", "bsubSpeakable", "bsubSourceLang", "bsubIsVi", "bsubIsAutoLabel", "bsubPickCaption", "bsubParseVtt", "bsubLangName", "bsubSegmentSentences", "bsubAiOn", "bsubAiId", "bsubNeededOrigins", "bsubParseHlsSubs", "bsubHlsSegments", "bsubIsFastCue"]) { try { this.S[n] = eval(n); } catch (e) { this.S[n] = null; } }', ctx);
   return ctx.S;
 }
 
@@ -75,6 +75,7 @@ function fakePage({ pageV = 'MAIN', ccPressed = 'false', voice = 'auto', geminiK
     : { href: 'https://' + HOST + '/learn/x/lecture/' + pageV, search: '', pathname: '/learn/x/lecture/' + pageV };
   const ccBtn = { clicks: 0, attrs: { 'aria-pressed': ccPressed }, getAttribute(k) { return this.attrs[k]; }, click() { this.clicks++; this.attrs['aria-pressed'] = this.attrs['aria-pressed'] === 'true' ? 'false' : 'true'; } };
   const sent = [];
+  const audios = [];   // các Audio giọng đọc đã tạo (test tự gọi onended để giả lập đọc xong)
   const ctx = {
     // hiddenTab: mô phỏng tab ẩn bị Chrome hãm — hẹn giờ ≥ 50ms không bao giờ chạy (chỉ còn sự kiện của video).
     console, setTimeout: hiddenTab ? (f, ms, ...a) => (ms >= 50 ? 0 : setTimeout(f, ms, ...a)) : setTimeout, clearTimeout, URL, URLSearchParams, JSON, Math, Promise, Error, String, Number, isFinite, Map, WeakSet, Object, Array, atob, btoa, Uint8Array,
@@ -90,7 +91,7 @@ function fakePage({ pageV = 'MAIN', ccPressed = 'false', voice = 'auto', geminiK
         sendMessage(m, cb) { sent.push(m); setTimeout(() => cb(m.type === 'translate' ? { ok: true, via: viaFn(m), translations: m.lines.map(l => (viaFn(m) === 'gemini' ? 'GEM ' : 'VI ') + l) } : { ok: true, engine: 'google', audio: btoa('x'), mime: 'audio/mpeg' }), 2); } },
       storage: { local: { get(d, cb) { if (typeof d === 'string') return Promise.resolve(cache && d.startsWith('cache:') ? { [d]: cache } : (d in store ? { [d]: store[d] } : {})); const o = { ...d, voice, geminiKey, autoDub, ...store }; if (cb) cb(o); else return Promise.resolve(o); }, set: o => { Object.assign(store, o); return Promise.resolve(); }, remove: k => { [].concat(k).forEach(x => delete store[x]); return Promise.resolve(); } }, onChanged: { addListener(f) { changeL.push(f); } } }
     },
-    Audio: function () { const a = { play() { return Promise.resolve(); }, pause() {} }; return a; }
+    Audio: function () { const a = { play() { return Promise.resolve(); }, pause() {} }; audios.push(a); return a; }
   };
   ctx.URL.createObjectURL = () => 'blob:x';
   ctx.window = ctx; ctx.addEventListener = (t, f) => { (winL[t] = winL[t] || []).push(f); };   // trình duyệt gọi MỌI bộ nghe
@@ -107,7 +108,7 @@ function fakePage({ pageV = 'MAIN', ccPressed = 'false', voice = 'auto', geminiK
   const fireChange = ch => changeL.forEach(f => f(ch, 'local'));
   const status = () => new Promise(r => msgListener({ type: 'status' }, {}, r));
   const btn = () => [player, barEl].flatMap(e => e.children).find(c => c.classList && c.classList.contains('bsub-btn')) || null;
-  return { barEl, playBtn, leftBtn, ctx, video, ccBtn, sent, postCaptions, postVtt, posted, fetched, diag, fireChange, status, btn, player, store };
+  return { audios, barEl, playBtn, leftBtn, ctx, video, ccBtn, sent, postCaptions, postVtt, posted, fetched, diag, fireChange, status, btn, player, store };
 }
 
 (async () => {
@@ -928,7 +929,8 @@ function fakePage({ pageV = 'MAIN', ccPressed = 'false', voice = 'auto', geminiK
     const code = fs.readFileSync(path.join(DIR, 'content/content.js'), 'utf8');
     check('khoá cache dùng BSUB_PROMPT_VERSION', /cacheId\s*=.*BSUB_PROMPT_VERSION/.test(code));
     // Khoá cũ là hash('v5|' + cueKey + ...): bản này không được làm mất cache đã có.
-    check('giữ nguyên khoá cache cũ (v5) để không dịch lại', vm.runInContext('typeof BSUB_PROMPT_VERSION !== "undefined" && BSUB_PROMPT_VERSION', P.ctx) === 5 && /hash\('v' \+ BSUB_PROMPT_VERSION \+ '\|' \+ cueKey/.test(code));
+    // Khoá cache = 'v' + BSUB_PROMPT_VERSION (5 = khoá 'v5|' cũ; tăng lên khi đổi prompt để dịch lại).
+    check('khoá cache theo BSUB_PROMPT_VERSION (định dạng v<số>|)', vm.runInContext('typeof BSUB_PROMPT_VERSION !== "undefined" && BSUB_PROMPT_VERSION', P.ctx) >= 5 && /hash\('v' \+ BSUB_PROMPT_VERSION \+ '\|' \+ cueKey/.test(code));
   }
 
   console.log('42. Dọn cache: quá hạn (TTL) và vượt giới hạn (LRU)');
@@ -1125,6 +1127,97 @@ function fakePage({ pageV = 'MAIN', ccPressed = 'false', voice = 'auto', geminiK
     P.postVtt(B.replace('L0', 'L1') + 'subtitle/deu/def-deu.vtt', 'WEBVTT\n\n00:00:00.100 --> 00:00:03.000\nDas ist die zweite Lektion.\n');
     await sleep(300);
     check('đã có English: không thay bằng tiếng Đức', /def-eng/.test((await P.diag()).cueKey));
+  }
+
+  console.log('48. Prompt dịch lồng tiếng: thuật lại đầy đủ, không tóm tắt; giữ thuật ngữ; viết cho tai nghe');
+  {
+    const bodies = [];
+    const resp = (status, body) => ({ ok: status < 300, status, json: async () => body, text: async () => JSON.stringify(body) });
+    const ctx = { console, setTimeout, clearTimeout, AbortController, TextDecoder, btoa, atob, URL, encodeURIComponent, decodeURIComponent, Uint8Array, DataView, String, JSON, Math, Promise, Error, Object, Array, Date, parseFloat };
+    ctx.fetch = async (url, init = {}) => {
+      if (url.includes('/chat/completions')) { bodies.push(JSON.parse(init.body)); return resp(200, { choices: [{ message: { content: '{"1":"Xin chào các bạn."}' } }] }); }
+      return resp(200, [[['x']]]);
+    };
+    ctx.chrome = { runtime: { onInstalled: { addListener() {} }, onMessage: { addListener(f) { ctx.handler = f; } } },
+      storage: { local: { get(d, cb) { cb({ ...d, apiKey: 'SK' }); }, set: () => Promise.resolve() } } };
+    ctx.importScripts = f => vm.runInContext(fs.readFileSync(path.join(DIR, f), 'utf8'), ctx);
+    vm.createContext(ctx);
+    vm.runInContext(fs.readFileSync(path.join(DIR, 'background.js'), 'utf8'), ctx);
+    const r = await new Promise(res => ctx.handler({ type: 'translate', lang: 'en', title: 'AI for Everyone', lines: ['Hello everyone.'] }, {}, res));
+    const sys = bodies[0] && bodies[0].messages[0].content || '';
+    check('dịch được bằng prompt mới', r.ok && r.translations[0] === 'Xin chào các bạn.', r);
+    check('prompt: cấm tóm tắt / rút gọn', /Never summarize/i.test(sys) && /never shorter/i.test(sys), sys.slice(0, 120));
+    check('prompt: bỏ ràng buộc "dài ngang câu gốc"', !/about as long as the original/i.test(sys));
+    check('prompt: giữ thuật ngữ tiếng Anh, dịch nhất quán', /TECHNICAL TERMS/.test(sys) && /same way every time/i.test(sys));
+    check('prompt: viết cho giọng đọc (số, dấu phẩy ngắt hơi)', /WRITTEN FOR THE EAR/.test(sys) && /phần trăm/.test(sys));
+    check('prompt: thay {nguon} và {tieude}', /from English/.test(sys) && /"AI for Everyone"/.test(sys) && !/\{nguon\}|\{tieude\}/.test(sys));
+    check('prompt: vẫn yêu cầu JSON đúng các khoá', /exactly the same keys as "lines"/.test(sys));
+    check('đổi prompt: tăng BSUB_PROMPT_VERSION (cache cũ tự dịch lại)', /BSUB_PROMPT_VERSION\s*=\s*7\b/.test(fs.readFileSync(path.join(DIR, 'lib/shared.js'), 'utf8')));
+  }
+
+  console.log('49. Câu đọc tràn sang giờ của 2 câu sau: câu ở giữa KHÔNG bị bỏ, đọc lần lượt');
+  {
+    const P = fakePage({ ccPressed: 'true' });
+    await sleep(20);
+    P.postCaptions('MAIN', ['This is the first line here.', 'This is the second line here.', 'This is the third line here.']);
+    await sleep(400);
+    const read = async () => (await P.diag()).log.filter(l => /ĐỌC câu/.test(l)).map(l => +/ĐỌC câu (\d+)/.exec(l)[1]);
+    const endLast = async () => { const a = P.audios[P.audios.length - 1]; if (a && a.onended) a.onended(); await sleep(150); };
+    P.video.currentTime = 0.2; P.video.fire('timeupdate'); await sleep(300);   // đọc câu 0 (chưa xong)
+    P.video.currentTime = 3.2; P.video.fire('timeupdate'); await sleep(150);   // tới giờ câu 1: xếp hàng
+    P.video.currentTime = 6.2; P.video.fire('timeupdate'); await sleep(150);   // tới giờ câu 2: xếp hàng
+    await endLast();                                                            // câu 0 đọc xong
+    await sleep(200);
+    await endLast();                                                            // câu 1 đọc xong
+    await sleep(200);
+    const r = await read();
+    check('đọc đủ 0, 1, 2 theo thứ tự (không bỏ câu 1)', r.join(',') === '0,1,2', r);
+    // Câu chờ đã quá cũ (hết giờ hơn vài giây): bỏ để không trễ mãi.
+    const Q = fakePage({ ccPressed: 'true' });
+    await sleep(20);
+    Q.postCaptions('MAIN', ['This is the first line here.', 'This is the second line here.', 'This is the third line here.']);
+    await sleep(400);
+    Q.video.currentTime = 0.2; Q.video.fire('timeupdate'); await sleep(300);
+    Q.video.currentTime = 3.2; Q.video.fire('timeupdate'); await sleep(150);
+    Q.video.currentTime = 6.2; Q.video.fire('timeupdate'); await sleep(150);
+    Q.video.currentTime = 11.5;                                                 // câu 1 hết giờ (6s) từ lâu
+    { const a = Q.audios[Q.audios.length - 1]; if (a && a.onended) a.onended(); }
+    await sleep(300);
+    const rq = (await Q.diag()).log.filter(l => /ĐỌC câu/.test(l)).map(l => +/ĐỌC câu (\d+)/.exec(l)[1]);
+    check('câu chờ quá cũ thì bỏ, đọc câu còn kịp', rq.join(',') === '0,2', rq);
+  }
+
+  console.log('50. Tốc độ nói từng đoạn: câu nói nhanh -> dịch gọn (khớp hình), câu nói chậm -> đủ ý');
+  {
+    const S4 = loadShared();
+    check('có hàm bsubIsFastCue', !!S4.bsubIsFastCue);
+    if (S4.bsubIsFastCue) {
+      check('10 từ trong 3 giây (3,3 từ/giây) = nói nhanh', S4.bsubIsFastCue({ start: 0, end: 3, text: 'one two three four five six seven eight nine ten' }) === true);
+      check('6 từ trong 3 giây (2 từ/giây) = nói chậm', S4.bsubIsFastCue({ start: 0, end: 3, text: 'one two three four five six' }) === false);
+    }
+    // content.js gửi kèm cờ nói nhanh cho từng câu của lô dịch.
+    const P = fakePage({ ccPressed: 'true' });
+    await sleep(20);
+    P.postCaptions('MAIN', ['This is a slow and calm line.', 'So here we go really fast with many many words in this very short line now.']);
+    await sleep(400);
+    const m = P.sent.find(x => x.type === 'translate');
+    check('lô dịch gửi cờ nói nhanh từng câu', m && Array.isArray(m.fast) && m.fast.length === m.lines.length && m.fast.includes(true) && m.fast.includes(false), m && m.fast);
+    check('nhật ký ghi số câu nói nhanh', /nói nhanh/.test((await P.diag()).log.join('\n')));
+    // background: đưa cờ vào dữ liệu gửi AI + prompt có hướng dẫn cho câu nói nhanh.
+    const bodies = [];
+    const resp = (status, body) => ({ ok: status < 300, status, json: async () => body, text: async () => JSON.stringify(body) });
+    const ctx = { console, setTimeout, clearTimeout, AbortController, TextDecoder, btoa, atob, URL, encodeURIComponent, decodeURIComponent, Uint8Array, DataView, String, JSON, Math, Promise, Error, Object, Array, Date, parseFloat };
+    ctx.fetch = async (url, init = {}) => { bodies.push(JSON.parse(init.body)); return resp(200, { choices: [{ message: { content: '{"1":"A","2":"B"}' } }] }); };
+    ctx.chrome = { runtime: { onInstalled: { addListener() {} }, onMessage: { addListener(f) { ctx.handler = f; } } },
+      storage: { local: { get(d, cb) { cb({ ...d, apiKey: 'SK' }); }, set: () => Promise.resolve() } } };
+    ctx.importScripts = f => vm.runInContext(fs.readFileSync(path.join(DIR, f), 'utf8'), ctx);
+    vm.createContext(ctx);
+    vm.runInContext(fs.readFileSync(path.join(DIR, 'background.js'), 'utf8'), ctx);
+    await new Promise(res => ctx.handler({ type: 'translate', lang: 'en', lines: ['Slow line.', 'Fast line.'], fast: [false, true] }, {}, res));
+    const input = bodies[0] ? JSON.parse(bodies[0].messages[1].content) : {};
+    const sys = bodies[0] ? bodies[0].messages[0].content : '';
+    check('gửi AI danh sách câu nói nhanh (khoá "2")', JSON.stringify(input.fast_speech_lines) === '["2"]', input.fast_speech_lines);
+    check('prompt: câu nói nhanh dịch gọn nhưng không bỏ ý', /fast_speech_lines/.test(sys) && /concise/i.test(sys) && /never drop/i.test(sys), sys.slice(-600));
   }
 
   console.log('\n' + pass + ' đạt, ' + fail + ' lỗi');

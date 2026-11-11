@@ -36,7 +36,10 @@
   let gen = 0;              // tăng mỗi khi các yêu cầu dịch đang chạy trở nên lỗi thời
   let video = null;
   let dubbedIdx = -1, dubActive = false, dubToken = 0, audio = null;
-  let pendingIdx = -1;      // câu chờ đọc khi câu trước chưa đọc xong
+  // Hàng đợi câu chờ đọc khi câu trước chưa đọc xong. Trước đây chỉ giữ MỘT câu chờ: câu đọc tràn sang giờ
+  // của 2 câu sau thì câu ở giữa bị bỏ (nghe như bị tóm tắt). Câu chờ quá giờ hơn QUEUE_SLACK giây thì bỏ để không trễ mãi.
+  let dubQueue = [];
+  const QUEUE_SLACK = 4;
   let saveTimer = 0, retryTimer = 0, upgradeTimer = 0, upgradeWait = 0;
   const seenVideos = new WeakSet();
   const ttsCache = new Map();
@@ -368,9 +371,12 @@
         // Ngữ cảnh: tên video + tối đa 8 câu ngay trước lô (kèm bản dịch nếu có) để dịch đúng mạch, xưng hô thống nhất.
         const before = cues.slice(Math.max(0, batch[0] - 8), batch[0]).map(c => ({ src: c.text, vi: c.tr || '' }));
         const title = (document.title || '').replace(/^\(\d+\)\s*/, '').replace(/\s*-\s*YouTube\s*$/, '');
-        D('GỬI DỊCH câu ' + batch[0] + '–' + batch[batch.length - 1]);
+        // Cờ nói nhanh từng câu: AI dịch gọn câu nói nhanh (khớp hình), dịch đủ ý câu nói chậm.
+        const fast = batch.map(i => bsubIsFastCue(cues[i]));
+        const nFast = fast.filter(Boolean).length;
+        D('GỬI DỊCH câu ' + batch[0] + '–' + batch[batch.length - 1] + (nFast ? ' (nói nhanh ' + nFast + '/' + batch.length + ' câu: dịch gọn)' : ''));
         const sentAt = Date.now();
-        const r = await send({ type: 'translate', lang: cueLang, title, before, lines: batch.map(i => cues[i].text) });
+        const r = await send({ type: 'translate', lang: cueLang, title, before, fast, lines: batch.map(i => cues[i].text) });
         if (my !== gen) return;
         batch.forEach((i, k) => {
           const c = cues[i];
@@ -417,7 +423,7 @@
     if (!idx.length) return;
     const before = cues.slice(Math.max(0, idx[0] - 8), idx[0]).map(c => ({ src: c.text, vi: c.tr || '' }));
     const title = (document.title || '').replace(/^\(\d+\)\s*/, '').replace(/\s*-\s*YouTube\s*$/, '');
-    const r = await send({ type: 'translate', lang: cueLang, title, before, lines: idx.map(i => cues[i].text) });
+    const r = await send({ type: 'translate', lang: cueLang, title, before, fast: idx.map(i => bsubIsFastCue(cues[i])), lines: idx.map(i => cues[i].text) });
     if (my !== gen) return;
     if (r.ok && r.via === 'gemini') {
       idx.forEach((i, k) => { if (r.translations[k]) { cues[i].tr = r.translations[k]; cues[i].via = 'gemini'; } });
@@ -928,15 +934,16 @@
     else if (c && c.tr && dubbedIdx !== idx && t - c.start < Math.max(0.6, (c.end - c.start) / 2)) {
       dubbedIdx = idx;
       // Câu trước còn đang đọc: xếp hàng thay vì cắt ngang.
-      if (dubActive) pendingIdx = idx;
+      if (dubActive) { if (!dubQueue.includes(idx)) dubQueue.push(idx); }
       else dubCue(idx);
     }
     return 100;
   }
 
   // ---- Lồng tiếng ----
-  function stopDub() {
-    pendingIdx = -1;
+  // keepQueue: dubCue gọi để dừng câu cũ nhưng vẫn giữ các câu đang chờ.
+  function stopDub(keepQueue) {
+    if (!keepQueue) dubQueue = [];
     if (!dubActive) return;
     dubActive = false;
     dubToken++;
@@ -970,7 +977,7 @@
 
   function dubCue(idx) {
     const c = cues[idx];
-    stopDub();
+    stopDub(true);
     // Câu chỉ toàn ký hiệu (vd "[Âm nhạc]"): không có gì để đọc.
     if (!speakable(c.tr)) return;
     dubActive = true;
@@ -982,10 +989,12 @@
       if (finished || token !== dubToken) return;
       finished = true;
       dubActive = false;
-      const p = pendingIdx;
-      pendingIdx = -1;
-      // Còn câu đang chờ và vẫn trong khung thời gian của nó: đọc tiếp.
-      if (p >= 0 && cues[p] && cues[p].tr && cfg.enabled && video && !video.paused && video.currentTime < cues[p].end) dubCue(p);
+      // Đọc lần lượt các câu đang chờ; câu đã quá giờ hơn QUEUE_SLACK giây thì bỏ (giọng đọc tự tăng tốc để đuổi kịp).
+      while (dubQueue.length) {
+        const p = dubQueue.shift();
+        if (cues[p] && cues[p].tr && cfg.enabled && video && !video.paused && video.currentTime < cues[p].end + QUEUE_SLACK) { dubCue(p); return; }
+        D('  bỏ câu ' + p + ' (đã quá giờ)');
+      }
     };
 
     const voice = localVoice();
