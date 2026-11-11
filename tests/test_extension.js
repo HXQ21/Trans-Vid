@@ -926,6 +926,8 @@ function fakePage({ pageV = 'MAIN', ccPressed = 'false', voice = 'auto', geminiK
     check('rê chuột (bật): gợi ý "Tắt lồng tiếng"', P.btn().getAttribute('data-tip') === 'Tắt lồng tiếng', P.btn().attrs);
     check('CSS: logo không mở rộng khi rê chuột', !/\.bsub-btn:hover\s*\{[^}]*font-size:\s*13px/.test(css));
     check('CSS: gợi ý hiện từ data-tip', /content:\s*attr\(data-tip\)/.test(css));
+    const btnRules = (css.match(/\.bsub-btn(\.bsub-on)?(:hover)?\s*\{[^}]*\}/g) || []).join('\n');
+    check('CSS: chỉ có logo, không khung / nền / viền', !/rgba\(|box-shadow:\s*0|border-radius:\s*1\dpx|padding:\s*[1-9]/.test(btnRules), btnRules);
   }
 
   console.log('44. learn.deeplearning.ai: lấy phụ đề WebVTT từ danh sách HLS (.m3u8) của video');
