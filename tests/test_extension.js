@@ -1292,6 +1292,23 @@ function fakePage({ pageV = 'MAIN', ccPressed = 'false', voice = 'auto', geminiK
     check('quá 300 -> xoá video xem lâu nhất (V1), giữ V0 vừa xem lại', !('yt:V1' in N.store.dubVideos) && 'yt:V0' in N.store.dubVideos);
   }
 
+  console.log('54. YouTube đặt phụ đề "Tự động dịch → Tiếng Việt" (tlang): tự tải phụ đề gốc (bỏ tlang) rồi dịch');
+  {
+    const orig = 'https://www.youtube.com/api/timedtext?v=MAIN&lang=en&kind=asr';
+    const json = JSON.stringify({ events: [{ tStartMs: 0, dDurationMs: 3000, segs: [{ utf8: 'This is the original English line.' }] }] });
+    const P = fakePage({ ccPressed: 'true', files: { [orig]: json } });
+    await sleep(20);
+    P.postCaptions('MAIN', ['Đây là bản máy dịch của YouTube.'], '&lang=en&kind=asr&tlang=vi');
+    await sleep(500);
+    const tr = P.sent.filter(m => m.type === 'translate');
+    check('tải phụ đề gốc (cùng địa chỉ, bỏ tlang)', P.fetched.includes(orig), P.fetched);
+    check('dịch từ phụ đề gốc tiếng Anh, không dùng bản máy dịch', tr.length && /original English/.test(tr[0].lines.join(' ')) && !/máy dịch/.test(tr[0].lines.join(' ')), tr.map(m => m.lines));
+    // Bản tlang đến lại nhiều lần: chỉ tải bản gốc một lần.
+    P.postCaptions('MAIN', ['Đây là bản máy dịch của YouTube.'], '&lang=en&kind=asr&tlang=vi');
+    await sleep(300);
+    check('không tải lại bản gốc nhiều lần', P.fetched.filter(u => u === orig).length === 1, P.fetched);
+  }
+
   console.log('\n' + pass + ' đạt, ' + fail + ' lỗi');
   process.exit(fail ? 1 : 0);
 })();

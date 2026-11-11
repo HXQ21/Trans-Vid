@@ -152,11 +152,29 @@
     if (e.data && e.data.__bsub === 'hooklog') { D('HOOK: ' + e.data.msg + (e.source === window ? '' : ' (source khác window!)')); return; }
     if (e.data && e.data.__bsub === 'timedtext' && e.source !== window) D('Bỏ tin phụ đề vì e.source !== window');
     if (e.source !== window || !e.data || e.data.__bsub !== 'timedtext') return;
+    handleTimedtext(e.data.url, e.data.text);
+  });
+  // Đã tự tải phụ đề gốc cho địa chỉ nào (bản tlang đến nhiều lần thì chỉ tải một lần).
+  const tlangFetched = new Set();
+  function handleTimedtext(url, text) {
     let u;
-    try { u = new URL(e.data.url, location.href); } catch (err) { return; }
+    try { u = new URL(url, location.href); } catch (err) { return; }
     const p = u.searchParams;
-    D('PHỤ ĐỀ đến: v=' + p.get('v') + ' (trang v=' + pageVideoId() + ') lang=' + p.get('lang') + ' kind=' + (p.get('kind') || '-') + (p.get('tlang') ? ' tlang=' + p.get('tlang') + ' -> bỏ' : ''));
-    if (p.get('tlang')) return; // bản tự dịch của YouTube
+    D('PHỤ ĐỀ đến: v=' + p.get('v') + ' (trang v=' + pageVideoId() + ') lang=' + p.get('lang') + ' kind=' + (p.get('kind') || '-') + (p.get('tlang') ? ' tlang=' + p.get('tlang') : ''));
+    if (p.get('tlang')) {
+      // Trình phát đặt "Tự động dịch" (tlang): không dùng bản máy dịch. YouTube không tải bản gốc nữa,
+      // nên tự tải cùng địa chỉ bỏ tlang để có phụ đề gốc rồi dịch bằng AI.
+      p.delete('tlang');
+      const orig = u.toString();
+      if (tlangFetched.has(orig)) { D('  -> bỏ bản máy dịch (đã tải phụ đề gốc)'); return; }
+      tlangFetched.add(orig);
+      D('  -> bỏ bản máy dịch, tự tải phụ đề gốc ' + (p.get('lang') || ''));
+      fetch(orig, { credentials: 'include' })
+        .then(r => (r.ok ? r.text() : Promise.reject(new Error('HTTP ' + r.status))))
+        .then(t => { if (t) handleTimedtext(orig, t); else D('  -> phụ đề gốc rỗng'); })
+        .catch(err => { D('  -> tải phụ đề gốc lỗi: ' + err.message); tlangFetched.delete(orig); });
+      return;
+    }
     // Phụ đề của video khác (quảng cáo, video xem trước khi rê chuột): bỏ, nếu không sẽ đọc nhầm nội dung.
     const pv = pageVideoId();
     if (p.get('v') && pv && p.get('v') !== pv) { D('  -> bỏ: phụ đề của video khác'); return; }
@@ -176,10 +194,10 @@
     }
     const key = 'yt|' + [p.get('v'), lang, p.get('kind') || '', p.get('name') || ''].join('|');
     if (key === cueKey) return;
-    const list = mergeCues(parseTimedText(e.data.text), p.get('kind') === 'asr', lang);
+    const list = mergeCues(parseTimedText(text), p.get('kind') === 'asr', lang);
     D('  -> ' + list.length + ' câu' + (list.length ? ', câu đầu: "' + list[0].text.slice(0, 60) + '"' : ''));
     if (list.length) setCues(key, lang, list, isVi);
-  });
+  }
   let preferViAskedFor = '';
 
   // ---- Udemy: hook.js bắt tệp VTT trình phát tải về (vtt-cf.udemycdn.com/<mã>/<ngôn ngữ>/....vtt) ----
