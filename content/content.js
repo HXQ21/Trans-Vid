@@ -20,13 +20,29 @@
   };
   const pageVideoId = () => new URLSearchParams(location.search).get('v')
     || ((/^\/(?:shorts|embed|live)\/([\w-]{6,})/.exec(location.pathname || '') || [])[1]) || '';
-  // Mỗi video / bài học có một khoá riêng để nhớ đã bấm bật hay tắt lồng tiếng.
+  // Mỗi video / bài học có một khoá riêng trong lịch sử.
   const vidKey = () => (IS_YT ? 'yt:' + pageVideoId() : 'pg:' + HOST + (location.pathname || ''));
-  // Video này có đang bật lồng tiếng không: đã bấm nút thì theo lần bấm, chưa bấm thì theo "Tự bật cho mọi video".
+  // Lịch sử video đã xem có lồng tiếng (dubVideos, tối đa HIST_MAX, cũ nhất ở đầu): video có trong lịch sử thì tự lồng tiếng.
+  // Bấm logo chỉ bật/tắt cho LẦN XEM NÀY (sessionOn), không xoá khỏi lịch sử (người dùng chọn 2026-11-11: không nhớ bật/tắt).
+  const HIST_MAX = 300;
+  const sessionOn = {};
   const isOn = () => {
-    const m = cfg.dubVideos || {}, k = vidKey();
-    return m[k] === 1;   // chỉ nhớ video đã bật; dữ liệu cũ ghi 0 (tắt) = mặc định tắt
+    const k = vidKey();
+    if (k in sessionOn) return sessionOn[k];
+    return (cfg.dubVideos || {})[k] === 1;
   };
+  // Đưa video lên mới nhất trong lịch sử; quá HIST_MAX thì bỏ video xem lâu nhất; dọn mục "tắt" (0) của bản cũ.
+  function remember(k) {
+    const old = cfg.dubVideos || {}, m = {};
+    for (const [key, v] of Object.entries(old)) if (v === 1 && key !== k) m[key] = 1;
+    if (k) m[k] = 1;
+    const keys = Object.keys(m);
+    while (keys.length > HIST_MAX) delete m[keys.shift()];
+    if (JSON.stringify(Object.keys(m)) === JSON.stringify(Object.keys(old)) && Object.values(old).every(v => v === 1)) return;
+    cfg.dubVideos = m;
+    chrome.storage.local.set({ dubVideos: m }).catch(() => {});
+  }
+  let rememberedKey = '';
 
   let cfg = { ...BSUB_DEFAULTS };
   let cues = [];            // { start, end, text, tr, busy, failed, tries }
@@ -44,7 +60,7 @@
   const seenVideos = new WeakSet();
   const ttsCache = new Map();
 
-  bsubGet().then(c => { cfg = c; loop(); });
+  bsubGet().then(c => { cfg = c; remember(''); loop(); });   // remember(''): chỉ dọn mục "tắt" cũ
 
   chrome.storage.onChanged.addListener((ch, area) => {
     if (area !== 'local') return;
@@ -675,15 +691,11 @@
   // ---- Nút "Lồng tiếng" ở góc phải dưới video ----
   let btnEl = null, wasOn = null;
 
+  // Bấm logo: bật/tắt cho lần xem này. Bật thì video vào lịch sử (mới nhất); tắt không đụng tới lịch sử.
   function toggleDub() {
-    const k = vidKey(), m = { ...(cfg.dubVideos || {}) };
-    const on = !isOn();
-    delete m[k];   // tắt: xoá khỏi danh sách (không nhớ trạng thái tắt)
-    if (on) m[k] = 1;   // bật: đưa xuống cuối để khi quá 300 video thì bỏ video cũ nhất
-    const keys = Object.keys(m);
-    while (keys.length > 300) delete m[keys.shift()];
-    cfg.dubVideos = m;
-    chrome.storage.local.set({ dubVideos: m }).catch(() => {});
+    const k = vidKey(), on = !isOn();
+    sessionOn[k] = on;
+    if (on) { remember(k); rememberedKey = k; }
     updateButton();
   }
 
@@ -881,6 +893,7 @@
   function tick() {
     const on = cfg.enabled && isOn();
     const active = on && cues.length > 0;
+    if (on && rememberedKey !== vidKey()) { rememberedKey = vidKey(); remember(rememberedKey); }
     // Đang lồng tiếng: ẩn phụ đề của YouTube (phụ đề chỉ dùng làm nguồn dịch).
     document.documentElement.classList.toggle('bsub-hide-native', active);
     if (on && wasOn !== true) turnOn();

@@ -635,7 +635,7 @@ function fakePage({ pageV = 'MAIN', ccPressed = 'false', voice = 'auto', geminiK
     B.btn().fire('click');
     await sleep(300);
     check('bấm lại -> tắt', (await B.status()).on === false);
-    check('bấm lại -> xoá khỏi danh sách (không nhớ trạng thái tắt)', B.store.dubVideos && !('yt:MAIN' in B.store.dubVideos), B.store.dubVideos);
+    check('bấm lại -> chỉ tắt lần xem này, vẫn còn trong lịch sử', B.store.dubVideos && B.store.dubVideos['yt:MAIN'] === 1, B.store.dubVideos);
     // Video đã bật lần trước: tự bật.
     const C = fakePage({ autoDub: false, ccPressed: 'true', store: { dubVideos: { 'yt:MAIN': 1 } } });
     await sleep(20);
@@ -1267,6 +1267,29 @@ function fakePage({ pageV = 'MAIN', ccPressed = 'false', voice = 'auto', geminiK
     vm.runInContext(fs.readFileSync(path.join(DIR, 'lib/shared.js'), 'utf8') + ';this.D = BSUB_DEFAULTS;', c);
     check('BSUB_DEFAULTS có dubVideos (mặc định {})', 'dubVideos' in c.D && c.D.dubVideos && typeof c.D.dubVideos === 'object' && !Object.keys(c.D.dubVideos).length, Object.keys(c.D));
     check('bỏ tuỳ chọn "Tự bật cho mọi video" (autoDub)', !('autoDub' in c.D) && !/autoDub/.test(fs.readFileSync(path.join(DIR, 'options/options.html'), 'utf8') + fs.readFileSync(path.join(DIR, 'options/options.js'), 'utf8') + fs.readFileSync(path.join(DIR, 'content/content.js'), 'utf8')));
+  }
+
+  console.log('53. Lịch sử video đã xem có lồng tiếng: xem lại thì lên mới nhất, quá 300 xoá video xem lâu nhất, dọn mục "tắt" cũ');
+  {
+    const hist = {};
+    for (let i = 0; i < 300; i++) hist['yt:V' + i] = 1;   // V0 = xem lâu nhất
+    hist['yt:OLD'] = 0;                                    // mục "tắt" của bản cũ
+    const P = fakePage({ pageV: 'V0', autoDub: false, ccPressed: 'true', store: { dubVideos: { ...hist } } });
+    await sleep(800);
+    const keys = Object.keys(P.store.dubVideos);
+    check('video trong lịch sử -> tự lồng tiếng', (await P.status()).on === true);
+    check('xem lại -> lên mới nhất (cuối danh sách)', keys[keys.length - 1] === 'yt:V0', keys.slice(-3));
+    check('dọn mục "tắt" cũ (giá trị 0)', !('yt:OLD' in P.store.dubVideos));
+    check('vẫn đủ 300 video, chỉ toàn giá trị 1', keys.length === 300 && Object.values(P.store.dubVideos).every(v => v === 1), keys.length);
+    // Video mới: bấm bật -> vào lịch sử, quá 300 thì bỏ video xem lâu nhất (V1, vì V0 vừa xem lại).
+    const N = fakePage({ pageV: 'NEW', autoDub: false, ccPressed: 'true', store: { dubVideos: { ...P.store.dubVideos } } });
+    await sleep(300);
+    check('video mới chưa xem -> mặc định tắt', (await N.status()).on === false);
+    N.btn().fire('click');
+    await sleep(500);
+    const k2 = Object.keys(N.store.dubVideos);
+    check('bấm bật video mới -> vào lịch sử, mới nhất', k2[k2.length - 1] === 'yt:NEW' && k2.length === 300, [k2.length, k2.slice(-1)]);
+    check('quá 300 -> xoá video xem lâu nhất (V1), giữ V0 vừa xem lại', !('yt:V1' in N.store.dubVideos) && 'yt:V0' in N.store.dubVideos);
   }
 
   console.log('\n' + pass + ' đạt, ' + fail + ' lỗi');
