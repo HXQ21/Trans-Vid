@@ -706,7 +706,10 @@
     }
     if (btnEl.textContent !== label) btnEl.textContent = label;
     btnEl.classList.toggle('bsub-on', on);
-    btnEl.title = on ? 'Bấm để tắt lồng tiếng Việt cho video này' : 'Bấm để lồng tiếng Việt cho video này';
+    // Gợi ý khi rê chuột (CSS ::after đọc data-tip). Không dùng title để trình duyệt không hiện thêm gợi ý thứ hai.
+    const tip = on ? 'Tắt lồng tiếng' : 'Bật lồng tiếng';
+    if (btnEl.getAttribute('data-tip') !== tip) btnEl.setAttribute('data-tip', tip);
+    if (btnEl.getAttribute('aria-label') !== label) btnEl.setAttribute('aria-label', label);
   }
 
   function tick() {
