@@ -13,15 +13,10 @@ function showSource() {
 bsubGet().then(cfg => {
   bsubFillVoices($('voice'), cfg.voice, !!cfg.azureKey);
   for (const k of FIELDS) $(k).value = cfg[k];
-  $('autoDub').checked = !!cfg.autoDub;
   showSource();
 });
 $('apiKey').addEventListener('input', showSource);
 $('geminiKey').addEventListener('input', showSource);
-$('autoDub').addEventListener('change', async () => {
-  await chrome.storage.local.set({ autoDub: $('autoDub').checked });
-  note('Đã tự lưu.');
-});
 bsubWatchVoices($('voice'), hasAzure);
 // Nhập/xoá key Azure: cập nhật ghi chú của giọng Nam Minh / Hoài My.
 $('azureKey').oninput = () => bsubFillVoices($('voice'), $('voice').value, hasAzure());

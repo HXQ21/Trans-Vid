@@ -25,7 +25,7 @@
   // Video này có đang bật lồng tiếng không: đã bấm nút thì theo lần bấm, chưa bấm thì theo "Tự bật cho mọi video".
   const isOn = () => {
     const m = cfg.dubVideos || {}, k = vidKey();
-    return Object.prototype.hasOwnProperty.call(m, k) ? !!m[k] : !!cfg.autoDub;
+    return m[k] === 1;   // chỉ nhớ video đã bật; dữ liệu cũ ghi 0 (tắt) = mặc định tắt
   };
 
   let cfg = { ...BSUB_DEFAULTS };
@@ -677,9 +677,9 @@
 
   function toggleDub() {
     const k = vidKey(), m = { ...(cfg.dubVideos || {}) };
-    const next = isOn() ? 0 : 1;
-    delete m[k];
-    m[k] = next;   // đưa xuống cuối để khi quá 300 video thì bỏ video cũ nhất
+    const on = !isOn();
+    delete m[k];   // tắt: xoá khỏi danh sách (không nhớ trạng thái tắt)
+    if (on) m[k] = 1;   // bật: đưa xuống cuối để khi quá 300 video thì bỏ video cũ nhất
     const keys = Object.keys(m);
     while (keys.length > 300) delete m[keys.shift()];
     cfg.dubVideos = m;

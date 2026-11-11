@@ -73,6 +73,8 @@ function fakePage({ pageV = 'MAIN', ccPressed = 'false', voice = 'auto', geminiK
   const HOST = { youtube: 'www.youtube.com', udemy: 'www.udemy.com', coursera: 'www.coursera.org', dlai: 'learn.deeplearning.ai' }[site];
   const loc = site === 'youtube' ? { href: 'https://www.youtube.com/watch?v=' + pageV, search: '?v=' + pageV, pathname: '/watch' }
     : { href: 'https://' + HOST + '/learn/x/lecture/' + pageV, search: '', pathname: '/learn/x/lecture/' + pageV };
+  // autoDub = true trong test: video này đã được bật từ lần trước (extension chỉ nhớ video đã bật).
+  if (autoDub && !store.dubVideos) store.dubVideos = { [site === 'youtube' ? 'yt:' + pageV : 'pg:' + HOST + loc.pathname]: 1 };
   const ccBtn = { clicks: 0, attrs: { 'aria-pressed': ccPressed }, getAttribute(k) { return this.attrs[k]; }, click() { this.clicks++; this.attrs['aria-pressed'] = this.attrs['aria-pressed'] === 'true' ? 'false' : 'true'; } };
   const sent = [];
   const audios = [];   // các Audio giọng đọc đã tạo (test tự gọi onended để giả lập đọc xong)
@@ -89,7 +91,7 @@ function fakePage({ pageV = 'MAIN', ccPressed = 'false', voice = 'auto', geminiK
     chrome: {
       runtime: { getManifest: () => ({ version: 'test' }), onMessage: { addListener(f) { msgListener = f; } }, lastError: null,
         sendMessage(m, cb) { sent.push(m); setTimeout(() => cb(m.type === 'translate' ? { ok: true, via: viaFn(m), translations: m.lines.map(l => (viaFn(m) === 'gemini' ? 'GEM ' : 'VI ') + l) } : { ok: true, engine: 'google', audio: btoa('x'), mime: 'audio/mpeg' }), 2); } },
-      storage: { local: { get(d, cb) { if (typeof d === 'string') return Promise.resolve(cache && d.startsWith('cache:') ? { [d]: cache } : (d in store ? { [d]: store[d] } : {})); const o = { ...d, voice, geminiKey, autoDub, ...store }; if (cb) cb(o); else return Promise.resolve(o); }, set: o => { Object.assign(store, o); return Promise.resolve(); }, remove: k => { [].concat(k).forEach(x => delete store[x]); return Promise.resolve(); } }, onChanged: { addListener(f) { changeL.push(f); } } }
+      storage: { local: { get(d, cb) { if (typeof d === 'string') return Promise.resolve(cache && d.startsWith('cache:') ? { [d]: cache } : (d in store ? { [d]: store[d] } : {})); const o = { ...d, voice, geminiKey, ...store }; if (cb) cb(o); else return Promise.resolve(o); }, set: o => { Object.assign(store, o); return Promise.resolve(); }, remove: k => { [].concat(k).forEach(x => delete store[x]); return Promise.resolve(); } }, onChanged: { addListener(f) { changeL.push(f); } } }
     },
     Audio: function () { const a = { play() { return Promise.resolve(); }, pause() {} }; audios.push(a); return a; }
   };
@@ -633,19 +635,22 @@ function fakePage({ pageV = 'MAIN', ccPressed = 'false', voice = 'auto', geminiK
     B.btn().fire('click');
     await sleep(300);
     check('bấm lại -> tắt', (await B.status()).on === false);
-    check('bấm lại -> nhớ là đã tắt', B.store.dubVideos && B.store.dubVideos['yt:MAIN'] === 0, B.store.dubVideos);
+    check('bấm lại -> xoá khỏi danh sách (không nhớ trạng thái tắt)', B.store.dubVideos && !('yt:MAIN' in B.store.dubVideos), B.store.dubVideos);
     // Video đã bật lần trước: tự bật.
     const C = fakePage({ autoDub: false, ccPressed: 'true', store: { dubVideos: { 'yt:MAIN': 1 } } });
     await sleep(20);
     C.postCaptions('MAIN', ['This is the first line.', 'This is the second line.']);
     await sleep(400);
     check('video đã bật lần trước -> tự dịch', tr(C) > 0, tr(C));
-    // Tự bật cho mọi video, nhưng video này đã tự tắt -> tôn trọng.
-    const E = fakePage({ autoDub: true, ccPressed: 'true', store: { dubVideos: { 'yt:MAIN': 0 } } });
+    // Dữ liệu cũ (bản trước) nhớ video là tắt (0): coi như mặc định tắt, bấm một lần là bật.
+    const E = fakePage({ autoDub: false, ccPressed: 'true', store: { dubVideos: { 'yt:MAIN': 0 }, autoDub: true } });
     await sleep(20);
     E.postCaptions('MAIN', ['This is the first line.', 'This is the second line.']);
     await sleep(400);
-    check('tự bật mọi video + video này đã tắt -> không dịch', tr(E) === 0, tr(E));
+    check('không còn "tự bật mọi video": video chưa bật -> không dịch', tr(E) === 0, tr(E));
+    E.btn().fire('click');
+    await sleep(700);
+    check('video bị nhớ tắt (dữ liệu cũ) -> bấm một lần là bật', (await E.status()).on === true && tr(E) > 0, tr(E));
     // Coursera tắt: không tải phụ đề; bấm nút mới tải.
     const vtt = 'WEBVTT\n\n00:00:00.000 --> 00:00:03.000\nHello there my good friend.\n';
     const F = fakePage({ site: 'coursera', autoDub: false, tracks: [{ lang: 'en', label: 'English', src: '/sub/en.vtt' }], files: { '/sub/en.vtt': vtt } });
@@ -1261,7 +1266,7 @@ function fakePage({ pageV = 'MAIN', ccPressed = 'false', voice = 'auto', geminiK
     vm.createContext(c);
     vm.runInContext(fs.readFileSync(path.join(DIR, 'lib/shared.js'), 'utf8') + ';this.D = BSUB_DEFAULTS;', c);
     check('BSUB_DEFAULTS có dubVideos (mặc định {})', 'dubVideos' in c.D && c.D.dubVideos && typeof c.D.dubVideos === 'object' && !Object.keys(c.D.dubVideos).length, Object.keys(c.D));
-    check('autoDub vẫn mặc định tắt', c.D.autoDub === false);
+    check('bỏ tuỳ chọn "Tự bật cho mọi video" (autoDub)', !('autoDub' in c.D) && !/autoDub/.test(fs.readFileSync(path.join(DIR, 'options/options.html'), 'utf8') + fs.readFileSync(path.join(DIR, 'options/options.js'), 'utf8') + fs.readFileSync(path.join(DIR, 'content/content.js'), 'utf8')));
   }
 
   console.log('\n' + pass + ' đạt, ' + fail + ' lỗi');
