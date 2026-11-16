@@ -766,11 +766,13 @@
     return h;
   }
 
-  // Chỗ đặt logo: { group, before } = đầu dãy nút bên phải của thanh điều khiển (giống YouTube Dubbing: trước CC / cài đặt / toàn màn hình).
-  //   YouTube: đầu .ytp-right-controls.  DeepLearning.AI (Vidstack): ngay trước .vds-caption-button (mốc cố định).
-  //   Trang khác (Udemy, Coursera…): từ nút toàn màn hình / cài đặt / phụ đề ở đáy nửa phải, bỏ khung bọc riêng một nút
-  //   (popper, tooltip), đi lên tới hàng nút. Hàng chỉ có nút nửa phải: đứng đầu hàng. Hàng chung cả nút trái (Udemy):
-  //   đứng trước phần tử đầu tiên ở nửa phải có chứa nút (vd nút loa của Udemy).
+  // Chỗ đặt logo: { group, before }.
+  //   YouTube: đầu .ytp-right-controls (giống YouTube Dubbing: trước CC / cài đặt / toàn màn hình).
+  //   Trang khác (Udemy, Coursera, DeepLearning.AI): CUỐI hàng nút, sau nút toàn màn hình (before = null). Trình phát
+  //   hay vẽ lại phần giữa hàng (vd Vidstack vẽ lại tên chương khi đổi bài) và đẩy lệch logo nằm giữa hàng;
+  //   cuối hàng thì không bị đụng tới (người dùng quyết 2026-11-15).
+  //   DeepLearning.AI (Vidstack): hàng chứa .vds-caption-button. Trang khác: từ nút toàn màn hình / cài đặt / phụ đề
+  //   ở đáy nửa phải, bỏ khung bọc riêng một nút (popper, tooltip), đi lên tới hàng nút.
   //   Thanh nút đang ẩn (không đo được) thì trả về null: giữ nguyên chỗ cũ.
   function rightControlsIn(v, host) {
     if (IS_YT) {
@@ -789,7 +791,7 @@
     const isBtn = el => (el.matches ? el.matches('button, [role="button"]') : !!el.isBtn);
     if (IS_DLAI && host.querySelector) {
       const cap = host.querySelector('.vds-caption-button');
-      if (cap && cap.parentElement && isCtl(cap.getBoundingClientRect())) return { group: cap.parentElement, before: cap };
+      if (cap && cap.parentElement && isCtl(cap.getBoundingClientRect())) return { group: cap.parentElement, before: null };
     }
     for (const b of btns(host)) {
       const name = [b.getAttribute('aria-label'), b.getAttribute('data-purpose'), b.getAttribute('title'), typeof b.className === 'string' ? b.className : ''].join(' ');
@@ -805,13 +807,14 @@
         if (!p || p === host || hasLeft(p)) break;
         row = p;
       }
-      if (!hasLeft(row)) return { group: row, before: Array.from(row.children || []).find(c => c !== btnEl) || null };
+      if (!hasLeft(row)) return { group: row, before: null };
+      // Hàng chung cả nút trái (Udemy): chỉ nhận khi hàng có phần tử chứa nút ở nửa phải.
       const item = Array.from(row.children || []).find(c => {
         if (c === btnEl || !c.getBoundingClientRect) return false;
         const o = c.getBoundingClientRect();
         return o.width > 0 && o.left > mid && (isBtn(c) ? isCtl(o) : shown(c).length > 0);
       });
-      return item ? { group: row, before: item } : null;
+      return item ? { group: row, before: null } : null;
     }
     return null;
   }
@@ -853,11 +856,17 @@
   function hideTip() { if (tipEl) tipEl.classList.remove('bsub-tip-on'); }
 
   let spotCheckedAt = 0;
+  // Chưa thấy thanh nút thì để logo ẩn (không nổi ở góc rồi nhảy vào thanh). Chỉ cho nổi ở góc khi trình phát này
+  // chưa từng có thanh nút sau thời gian chờ (trình phát lạ). Đã từng vào thanh: thanh dựng lại thì chờ thanh mới.
+  const FLOAT_DELAY_MS = 5000;
+  const floatDelay = () => (window.__bsubFloatDelayMs != null ? window.__bsubFloatDelayMs : FLOAT_DELAY_MS);
+  let spotHost = null, spotWaitFrom = 0, everInBar = false;
   function updateButton() {
     const v = video;
     if (!cfg.enabled || !v) { if (btnEl) btnEl.style.display = 'none'; return; }
     const host = hostFor(v);
     if (!host) return;
+    if (host !== spotHost) { spotHost = host; spotWaitFrom = Date.now(); everInBar = false; }
     if (!btnEl) {
       btnEl = document.createElement('button');
       btnEl.classList.add('bsub-btn');
@@ -879,7 +888,11 @@
     if (spot) {
       if (btnEl.nextSibling !== spot.before || btnEl.parentNode !== spot.group) spot.group.insertBefore(btnEl, spot.before || null);
       btnEl.classList.add('bsub-inbar');
+      everInBar = true;
       fitToRow(spot.group);
+    } else if (!inBar && (everInBar || Date.now() - spotWaitFrom < floatDelay())) {
+      // Đang chờ thanh nút: gỡ logo khỏi trang, không cho hiện tạm ở góc video.
+      if (btnEl.parentNode) { btnEl.remove(); hideTip(); }
     } else if (!inBar && btnEl.parentNode !== host) {
       btnEl.classList.remove('bsub-inbar');
       host.appendChild(btnEl);

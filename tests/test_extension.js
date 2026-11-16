@@ -14,7 +14,7 @@ function loadShared() {
 }
 
 // Trang YouTube giả: video, nút CC, chrome.* giả; chạy shared.js + content.js thật.
-function fakePage({ pageV = 'MAIN', ccPressed = 'false', voice = 'auto', geminiKey = '', cache = null, viaFn = () => 'google', site = 'youtube', tracks = [], files = {}, autoDub = true, store = {}, hiddenTab = false, videoSrc = '', bar = '' } = {}) {
+function fakePage({ pageV = 'MAIN', ccPressed = 'false', voice = 'auto', geminiKey = '', cache = null, viaFn = () => 'google', site = 'youtube', tracks = [], files = {}, autoDub = true, store = {}, hiddenTab = false, videoSrc = '', bar = '', floatDelay = 0 } = {}) {
   let msgListener = null; const winL = {}; const changeL = [];
   const trackEls = tracks.map(t => ({ srclang: t.lang, label: t.label, getAttribute: k => (k === 'src' ? t.src : null) }));
   // Phần tử DOM giả tối thiểu (cho nút bật lồng tiếng trên video).
@@ -96,6 +96,7 @@ function fakePage({ pageV = 'MAIN', ccPressed = 'false', voice = 'auto', geminiK
     Audio: function () { const a = { play() { return Promise.resolve(); }, pause() {} }; audios.push(a); return a; }
   };
   ctx.URL.createObjectURL = () => 'blob:x';
+  ctx.__bsubFloatDelayMs = floatDelay;   // chờ thanh nút bao lâu rồi mới cho logo nổi ở góc (thật: 5000)
   ctx.window = ctx; ctx.addEventListener = (t, f) => { (winL[t] = winL[t] || []).push(f); };   // trình duyệt gọi MỌI bộ nghe
   vm.createContext(ctx);
   for (const f of ['lib/shared.js', 'content/content.js']) vm.runInContext(fs.readFileSync(path.join(DIR, f), 'utf8'), ctx);
@@ -999,24 +1000,24 @@ function fakePage({ pageV = 'MAIN', ccPressed = 'false', voice = 'auto', geminiK
     const U = fakePage({ site: 'udemy', ccPressed: 'false', autoDub: false, bar: 'generic' });
     await sleep(700);
     const ui = U.barEl.children.indexOf(U.btn());
-    check('Udemy/Coursera/DLAI: logo đứng ngoài cùng trái của cả dãy nút phải', ui === 0 && U.barEl.children.length === 3, [ui, U.barEl.children.length]);
+    check('Udemy/Coursera/DLAI: logo ở cuối hàng nút (sau nút toàn màn hình)', ui === 2 && U.barEl.children.length === 3, [ui, U.barEl.children.length]);
     check('Udemy/Coursera/DLAI: logo cùng cỡ nút bên cạnh', U.btn().style['--bsub-w'] === '40px' && U.btn().style['--bsub-h'] === '40px', U.btn().style);
     check('Udemy/Coursera/DLAI: không nhảy sang dãy nút trái', !U.player.children[0].children.includes(U.btn()));
     const V = fakePage({ site: 'dlai', ccPressed: 'false', autoDub: false, bar: 'vds' });
     await sleep(700);
     const vi = V.barEl.children.indexOf(V.btn());
-    check('Vidstack (DeepLearning.AI): logo ngay trước nút Captions, sau nút Play', vi > 0 && V.barEl.children[vi + 1] === V.playBtn && V.barEl.children.indexOf(V.leftBtn) < vi, V.barEl.children.map(c => c.attrs['aria-label'] || (c.classList.contains('bsub-btn') ? 'LOGO' : '-')));
+    check('Vidstack (DeepLearning.AI): logo ở cuối hàng nút, cùng hàng Captions', vi === V.barEl.children.length - 1 && V.barEl.children.includes(V.playBtn), V.barEl.children.map(c => c.attrs['aria-label'] || (c.classList.contains('bsub-btn') ? 'LOGO' : '-')));
     await sleep(700);
     check('Vidstack: không chèn lại mỗi nhịp', V.barEl.children.filter(c => c.classList && c.classList.contains('bsub-btn')).length === 1);
-    // Vidstack dựng lại thanh nút: gỡ nút Captions rồi gắn lại ở chỗ khác -> logo phải tự về lại ngay trước Captions.
+    // Vidstack dựng lại thanh nút: gỡ nút Captions rồi gắn lại ở cuối -> logo phải tự về lại cuối hàng.
     V.barEl.children = V.barEl.children.filter(c => c !== V.playBtn); V.playBtn.parentNode = null; V.barEl.appendChild(V.playBtn);
     await sleep(1600);
     const vi2 = V.barEl.children.indexOf(V.btn());
-    check('Vidstack dựng lại: logo tự về trước Captions', vi2 >= 0 && V.barEl.children[vi2 + 1] === V.playBtn, V.barEl.children.map(c => c.attrs['aria-label'] || (c.classList.contains('bsub-btn') ? 'LOGO' : '-')));
+    check('Vidstack dựng lại: logo tự về cuối hàng', vi2 === V.barEl.children.length - 1 && V.barEl.children[vi2 - 1] === V.playBtn, V.barEl.children.map(c => c.attrs['aria-label'] || (c.classList.contains('bsub-btn') ? 'LOGO' : '-')));
     const U2 = fakePage({ site: 'udemy', ccPressed: 'false', autoDub: false, bar: 'udemy' });
     await sleep(1500);
     const kids = U2.barEl.children, ui2 = kids.indexOf(U2.btn());
-    check('Udemy: logo cùng hàng, ngay trước khung nút loa (đầu dãy phải), không lọt vào khung popper của CC', ui2 > 0 && kids[ui2 + 1] && kids[ui2 + 1].children[0] === U2.playBtn, kids.map(c => (c.classList && c.classList.contains('bsub-btn')) ? 'LOGO' : ((c.children[0] && c.children[0].attrs['aria-label']) || '-')));
+    check('Udemy: logo cùng hàng, ở cuối hàng (sau khung nút CC), không lọt vào khung popper của CC', ui2 === kids.length - 1 && !kids.some(k => k.children.includes(U2.btn())), kids.map(c => (c.classList && c.classList.contains('bsub-btn')) ? 'LOGO' : ((c.children[0] && c.children[0].attrs['aria-label']) || '-')));
     const N = fakePage({ ccPressed: 'false', autoDub: false });
     await sleep(700);
     check('không thấy thanh điều khiển: vẫn có nút (nổi trên video)', N.btn() && !N.btn().classList.contains('bsub-inbar'));
@@ -1307,6 +1308,34 @@ function fakePage({ pageV = 'MAIN', ccPressed = 'false', voice = 'auto', geminiK
     P.postCaptions('MAIN', ['Đây là bản máy dịch của YouTube.'], '&lang=en&kind=asr&tlang=vi');
     await sleep(300);
     check('không tải lại bản gốc nhiều lần', P.fetched.filter(u => u === orig).length === 1, P.fetched);
+  }
+
+  console.log('55. Mới vào trang: logo không nổi ở góc rồi nhảy vào thanh nút');
+  {
+    const inPlayer = P => P.player.children.some(c => c.classList && c.classList.contains('bsub-btn'));
+    // Thanh nút YouTube dựng muộn: trước đó logo ẩn hẳn, có thanh thì vào thẳng thanh.
+    const Y = fakePage({ ccPressed: 'false', autoDub: false, bar: 'yt', floatDelay: 800 });
+    const qs = Y.player.querySelector; Y.player.querySelector = () => null;
+    await sleep(400);
+    check('chưa có thanh nút: không hiện logo nổi ở góc', !inPlayer(Y) && !Y.btn(), Y.btn() && Y.btn().classList.contains('bsub-inbar'));
+    Y.player.querySelector = qs;
+    await sleep(400);
+    check('có thanh nút: logo vào thẳng thanh', Y.barEl.children[0] === Y.btn() && Y.btn().classList.contains('bsub-inbar'));
+    // Trình phát dựng lại thanh nút (logo rơi khỏi thanh, thanh mới chưa có): không quay về góc video.
+    Y.btn().remove(); Y.player.querySelector = () => null;
+    await sleep(1300);
+    check('thanh nút dựng lại: logo không nổi ở góc', !inPlayer(Y));
+    Y.player.querySelector = qs;
+    await sleep(1300);
+    check('thanh mới có: logo về lại thanh', Y.barEl.children[0] === Y.btn());
+    // Trình phát lạ, mãi không thấy thanh nút: sau thời gian chờ mới nổi ở góc.
+    const N = fakePage({ ccPressed: 'false', autoDub: false, floatDelay: 600 });
+    await sleep(300);
+    check('trình phát lạ: chưa hết thời gian chờ thì chưa hiện', !N.btn());
+    await sleep(800);
+    check('trình phát lạ: hết thời gian chờ thì nổi ở góc', N.btn() && !N.btn().classList.contains('bsub-inbar'));
+    const src = fs.readFileSync(path.join(DIR, 'content/content.js'), 'utf8');
+    check('thời gian chờ thật là 5 giây', /FLOAT_DELAY_MS\s*=\s*5000/.test(src));
   }
 
   console.log('\n' + pass + ' đạt, ' + fail + ' lỗi');
