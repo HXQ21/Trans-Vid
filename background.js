@@ -131,35 +131,84 @@ async function geminiChat(cfg, system, user) {
       throw e;
     }
     lastGeminiModel = model;
-    const m = data.choices && data.choices[0] && data.choices[0].message;
-    return (m && m.content) || '';
+    return chatText(data, 'Gemini ' + model);
   }
   throw lastErr;
 }
 
 // ---- Key thuê: API tương thích OpenAI (vd Vilao). Chỉ 1 model, không tự chuyển model. ----
+// Mặc định gọi /chat/completions. Có trạm đã tắt kiểu này, chỉ nhận Responses API (/responses): lỗi báo vậy thì
+// gọi lại bằng /responses và nhớ theo địa chỉ (trong phiên + cfg.apiFormats trong storage) để lần sau gọi thẳng.
+const rentedFormat = {};           // địa chỉ API -> 'responses'
+const wantsResponses = e => (e && (e.status === 400 || e.status === 404 || e.status === 405))
+  && /chat_completions_disabled|\/v1\/responses|responses api/i.test(String(e.message || ''));
+
 async function rentedChat(cfg, system, user) {
-  const url = String(cfg.apiBase).trim().replace(/\/+$/, '') + '/chat/completions';
+  const base = String(cfg.apiBase).trim().replace(/\/+$/, '');
   const model = String(cfg.apiModel).trim();
-  const data = await request(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + String(cfg.apiKey).trim() },
-    body: JSON.stringify({ model, messages: [{ role: 'system', content: system }, { role: 'user', content: user }] })
-  }, 2, rentedTimeout(), r => r.json());
+  const headers = { 'Content-Type': 'application/json', Authorization: 'Bearer ' + String(cfg.apiKey).trim() };
   lastGeminiModel = model;
-  const m = data.choices && data.choices[0] && data.choices[0].message;
-  return (m && m.content) || '';
+  const who = aiName(cfg);
+  if (rentedFormat[base] === 'responses' || (cfg.apiFormats && cfg.apiFormats[base] === 'responses')) {
+    return rentedResponses(base, model, headers, system, user, who);
+  }
+  let data;
+  try {
+    data = await request(base + '/chat/completions', {
+      method: 'POST', headers,
+      body: JSON.stringify({ model, messages: [{ role: 'system', content: system }, { role: 'user', content: user }] })
+    }, 2, rentedTimeout(), r => r.json());
+  } catch (e) {
+    if (!wantsResponses(e)) throw e;
+    rentedFormat[base] = 'responses';
+    chrome.storage.local.set({ apiFormats: { ...(cfg.apiFormats || {}), [base]: 'responses' } });
+    return rentedResponses(base, model, headers, system, user, who);
+  }
+  return chatText(data, who);
+}
+
+// Chữ trả lời của /chat/completions. Có trạm trả content dạng mảng khối [{ type: 'text', text }], có trạm trả
+// HTTP 200 kèm { error }. Không có chữ thì báo rõ lý do (lỗi của trạm / model từ chối / rỗng + finish_reason).
+function chatText(data, who) {
+  if (data && data.error) throw new Error(who + ' báo lỗi: ' + String(data.error.message || JSON.stringify(data.error)).slice(0, 200));
+  const ch = data && data.choices && data.choices[0];
+  const m = ch && ch.message;
+  let c = m && m.content;
+  if (Array.isArray(c)) c = c.map(p => (typeof p === 'string' ? p : (p && p.text) || '')).join('');
+  if (typeof c === 'string' && c.trim()) return c;
+  if (m && m.refusal) throw new Error(who + ' từ chối trả lời: ' + String(m.refusal).slice(0, 150));
+  throw new Error(who + ' trả về rỗng' + (ch && ch.finish_reason ? ' (finish_reason=' + ch.finish_reason + ')' : ''));
+}
+
+// Responses API: prompt ở instructions, phụ đề ở input; không lưu hội thoại ở máy chủ (store: false).
+// Bản dịch: output_text, hoặc ghép các đoạn output[].content[].text.
+async function rentedResponses(base, model, headers, system, user, who) {
+  const data = await request(base + '/responses', {
+    method: 'POST', headers,
+    body: JSON.stringify({ model, instructions: system, input: user, store: false })
+  }, 2, rentedTimeout(), r => r.json());
+  if (data && data.error) throw new Error(who + ' báo lỗi: ' + String(data.error.message || JSON.stringify(data.error)).slice(0, 200));
+  if (typeof data.output_text === 'string' && data.output_text) return data.output_text;
+  const out = [];
+  for (const it of data.output || []) {
+    for (const c of (it && it.content) || []) if (c && (c.type === 'output_text' || c.type === 'text') && c.text) out.push(c.text);
+  }
+  if (out.join('').trim()) return out.join('');
+  const why = data.incomplete_details && data.incomplete_details.reason;
+  throw new Error(who + ' trả về rỗng' + (data.status ? ' (status=' + data.status + (why ? ', ' + why : '') + ')' : ''));
 }
 
 // Gọi AI theo nguồn đang chọn: key thuê (nếu đủ) trước, không thì Gemini của Google.
 const aiChat = (cfg, system, user) => (bsubUseRented(cfg) ? rentedChat : geminiChat)(cfg, system, user);
-const aiName = cfg => (bsubUseRented(cfg) ? 'Key thuê (' + String(cfg.apiModel).trim() + ')' : 'Gemini');
+// Vilao ghi kèm model (nhãn API riêng đã có model).
+const aiName = cfg => (!bsubUseRented(cfg) ? 'Gemini' : cfg.apiProvider === 'custom' ? bsubAiLabel(cfg) : bsubAiLabel(cfg) + ' (' + String(cfg.apiModel).trim() + ')');
 
-function parseObject(text) {
+// who: tên nguồn AI (ghi vào lỗi). Không thấy JSON thì lỗi kèm đoạn đầu câu trả lời để biết model đã trả gì.
+function parseObject(text, who = 'AI') {
   text = String(text || '').replace(/<think>[\s\S]*?<\/think>/g, '');
   const s = text.indexOf('{');
   const e = text.lastIndexOf('}');
-  if (s < 0 || e <= s) throw new Error('Gemini không trả về JSON');
+  if (s < 0 || e <= s) throw new Error(who + ' không trả về JSON: "' + text.replace(/\s+/g, ' ').trim().slice(0, 150) + '"');
   return JSON.parse(text.slice(s, e + 1));
 }
 
@@ -209,7 +258,7 @@ async function geminiTranslate(cfg, lines, srcName, ctx = {}) {
   const fastKeys = lines.map((_, i) => String(i + 1)).filter((_, i) => (ctx.fast || [])[i]);
   const input = { video_title: ctx.title || '', earlier_lines_for_context_only: (ctx.before || []).slice(-8), lines: lineObj };
   if (fastKeys.length) input.fast_speech_lines = fastKeys;
-  const out = parseObject(await aiChat(cfg, system, JSON.stringify(input)));
+  const out = parseObject(await aiChat(cfg, system, JSON.stringify(input)), aiName(cfg));
   const obj = out.lines && typeof out.lines === 'object' ? out.lines : out;
   return lines.map((_, i) => (typeof obj[i + 1] === 'string' ? obj[i + 1].trim() : ''));
 }

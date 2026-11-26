@@ -27,7 +27,7 @@ bsubGet().then(cfg => {
     m.textContent = err;
     m.hidden = !err;
   };
-  engineName = bsubUseRented(cfg) ? 'Vilao' : cfg.geminiKey ? 'Gemini' : 'Google Dịch';
+  engineName = bsubAiLabel(cfg);
   modeName = cfg.readMode === 'full' ? 'đủ ý cả bài' : 'tự động';
 });
 
@@ -89,7 +89,7 @@ $('diag').onclick = async () => {
   const lines = [];
   lines.push('Extension v' + chrome.runtime.getManifest().version + ' | ' + navigator.userAgent.match(/(Edg|Chrome)\/[\d.]+/g).join(' '));
   lines.push('Cấu hình: bật=' + cfg.enabled + ' giọng=' + cfg.voice + ' volGiọng=' + cfg.voiceVolume
-    + ' | geminiKey=' + mask(cfg.geminiKey) + ' model=' + cfg.geminiModel + ' | keyThuê=' + mask(cfg.apiKey) + ' ' + (cfg.apiBase || '-') + ' ' + (cfg.apiModel || '-') + ' | azureKey=' + mask(cfg.azureKey) + ' region=' + cfg.azureRegion);
+    + ' | geminiKey=' + mask(cfg.geminiKey) + ' model=' + cfg.geminiModel + ' | nguồn=' + bsubAiLabel(cfg) + ' keyThuê=' + mask(cfg.apiKey) + ' ' + (cfg.apiBase || '-') + ' ' + (cfg.apiModel || '-') + ' | azureKey=' + mask(cfg.azureKey) + ' region=' + cfg.azureRegion);
   lines.push('Giọng tiếng Việt trong popup: ' + (bsubVietVoices().map(v => v.name).join(', ') || 'KHÔNG CÓ'));
   const t = await chrome.runtime.sendMessage({ type: 'test' }).catch(e => ({ ok: false, error: e.message }));
   lines.push('Thử dịch (background): ' + (t && t.ok ? t.reply : 'LỖI ' + (t ? t.error : 'không phản hồi')));

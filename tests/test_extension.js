@@ -6,10 +6,43 @@ let pass = 0, fail = 0;
 const check = (name, ok, got) => { if (ok) { pass++; console.log('  ok   ' + name); } else { fail++; console.log('  FAIL ' + name + (got !== undefined ? '  -> ' + JSON.stringify(got) : '')); } };
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
+// Trang Cài đặt giả: chạy options/options.js thật (DOM, chrome.storage, chrome.permissions giả).
+function fakeOptions(store = {}, fetchFn) {
+  const els = {}, saved = { ...store }, perms = [];
+  const mk = id => {
+    const set = new Set();
+    return { id, value: '', hidden: false, textContent: '', className: '', type: 'text', listeners: {}, children: [], selectedOptions: [{ textContent: '' }],
+      classList: { add: c => set.add(c), remove: c => set.delete(c), contains: c => set.has(c), toggle: (c, f) => ((f === undefined ? !set.has(c) : f) ? set.add(c) : set.delete(c)) },
+      addEventListener(t, f) { (this.listeners[t] = this.listeners[t] || []).push(f); },
+      appendChild(c) { this.children.push(c); return c; }, replaceChildren(...c) { this.children = c; }, setAttribute() {} };
+  };
+  const $ = id => els[id] || (els[id] = mk(id));
+  const fire = async (id, t) => {
+    const e = $(id);
+    if (t === 'click' && e.onclick) await e.onclick();
+    if (t === 'change' && e.onchange) await e.onchange();
+    for (const f of e.listeners[t] || []) await f();
+  };
+  const ctx = { console, Promise, Object, Array, String, JSON, Number, Error, Set, Map, URL, setTimeout, clearTimeout,
+    document: { getElementById: $, createElement: () => mk('') },
+    fetch: fetchFn || (async () => ({ ok: false, status: 404, json: async () => ({}) })),
+    chrome: {
+      storage: { local: {
+        get(d, cb) { const o = d && typeof d === 'object' ? { ...d, ...saved } : { ...saved }; if (cb) cb(o); else return Promise.resolve(o); },
+        set(o) { Object.assign(saved, o); return Promise.resolve(); }, remove() { return Promise.resolve(); } } },
+      permissions: { contains: async ({ origins }) => origins.every(o => perms.includes(o)), request: async ({ origins }) => { perms.push(...origins); return true; } },
+      runtime: { sendMessage: async () => ({ ok: true, reply: 'ok' }) } } };
+  ctx.window = ctx;
+  vm.createContext(ctx);
+  const stubVoices = 'function bsubFillVoices() {} function bsubWatchVoices() {} async function bsubPreview() { return ""; }\n';
+  vm.runInContext(fs.readFileSync(path.join(DIR, 'lib/shared.js'), 'utf8') + '\n' + stubVoices + fs.readFileSync(path.join(DIR, 'options/options.js'), 'utf8'), ctx);
+  return { $, fire, saved, perms };
+}
+
 function loadShared() {
   const ctx = { console, chrome: { storage: { local: { get() {} } } } };
   vm.createContext(ctx);
-  vm.runInContext(fs.readFileSync(path.join(DIR, 'lib/shared.js'), 'utf8') + '\n;this.S = {}; for (const n of ["bsubCleanSource", "bsubSpeakable", "bsubSourceLang", "bsubIsVi", "bsubIsAutoLabel", "bsubPickCaption", "bsubParseVtt", "bsubLangName", "bsubSegmentSentences", "bsubAiOn", "bsubAiId", "bsubNeededOrigins", "bsubParseHlsSubs", "bsubHlsSegments", "bsubIsFastCue"]) { try { this.S[n] = eval(n); } catch (e) { this.S[n] = null; } }', ctx);
+  vm.runInContext(fs.readFileSync(path.join(DIR, 'lib/shared.js'), 'utf8') + '\n;this.S = {}; for (const n of ["bsubCleanSource", "bsubSpeakable", "bsubSourceLang", "bsubIsVi", "bsubIsAutoLabel", "bsubPickCaption", "bsubParseVtt", "bsubLangName", "bsubSegmentSentences", "bsubAiOn", "bsubAiId", "bsubNeededOrigins", "bsubParseHlsSubs", "bsubHlsSegments", "bsubIsFastCue", "bsubNormApiBase", "bsubAiLabel"]) { try { this.S[n] = eval(n); } catch (e) { this.S[n] = null; } }', ctx);
   return ctx.S;
 }
 
@@ -1336,6 +1369,159 @@ function fakePage({ pageV = 'MAIN', ccPressed = 'false', voice = 'auto', geminiK
     check('trình phát lạ: hết thời gian chờ thì nổi ở góc', N.btn() && !N.btn().classList.contains('bsub-inbar'));
     const src = fs.readFileSync(path.join(DIR, 'content/content.js'), 'utf8');
     check('thời gian chờ thật là 5 giây', /FLOAT_DELAY_MS\s*=\s*5000/.test(src));
+  }
+
+  console.log('56. Cài đặt: Nguồn AI = Vilao hoặc tự điền API (địa chỉ, model, key)');
+  {
+    const S = loadShared();
+    const n = S.bsubNormApiBase;
+    check('có hàm bsubNormApiBase', typeof n === 'function');
+    if (n) {
+      check('địa chỉ: bỏ khoảng trắng và / cuối', n(' https://openrouter.ai/api/v1/ ') === 'https://openrouter.ai/api/v1', n(' https://openrouter.ai/api/v1/ '));
+      check('địa chỉ: bỏ /chat/completions dán thừa', n('https://api.x.com/v1/chat/completions') === 'https://api.x.com/v1', n('https://api.x.com/v1/chat/completions'));
+      check('địa chỉ: từ chối http://', n('http://api.x.com/v1') === '');
+      check('địa chỉ: từ chối chuỗi rỗng / không phải địa chỉ', n('') === '' && n('abc') === '' && n('https://') === '');
+    }
+    const L = S.bsubAiLabel;
+    check('có hàm bsubAiLabel', typeof L === 'function');
+    if (L) {
+      check('nhãn nguồn: Vilao', L({ apiProvider: 'vilao', apiBase: 'https://api.vilao.ai/v1', apiModel: 'm', apiKey: 'K' }) === 'Vilao');
+      check('nhãn nguồn: API riêng kèm tên model', L({ apiProvider: 'custom', apiBase: 'https://a.b/v1', apiModel: 'gpt-4o-mini', apiKey: 'K' }) === 'API riêng (gpt-4o-mini)');
+      check('nhãn nguồn: Gemini / Google Dịch', L({ geminiKey: 'G' }) === 'Gemini' && L({}) === 'Google Dịch');
+    }
+    const pjs = fs.readFileSync(path.join(DIR, 'popup/popup.js'), 'utf8'), bjs = fs.readFileSync(path.join(DIR, 'background.js'), 'utf8');
+    check('popup + background hiện tên nguồn bằng bsubAiLabel', /bsubAiLabel\(cfg\)/.test(pjs) && /bsubAiLabel\(cfg\)/.test(bjs));
+
+    // Người dùng cũ (key Vilao lưu ở apiKey): vẫn là Vilao, ô key Vilao giữ key.
+    const O = fakeOptions({ apiKey: 'SKV' });
+    await sleep(30);
+    check('người dùng cũ: nguồn = Vilao, giữ key Vilao', O.$('apiProvider').value === 'vilao' && O.$('vilaoKey').value === 'SKV', [O.$('apiProvider').value, O.$('vilaoKey').value]);
+    check('chọn Vilao: ẩn 3 ô tự điền', O.$('rowBase').hidden && O.$('rowModel').hidden && O.$('rowCKey').hidden && !O.$('rowVilao').hidden);
+    O.$('apiProvider').value = 'custom'; await O.fire('apiProvider', 'change');
+    check('chọn Tự điền API: hiện 3 ô, ẩn ô key Vilao', !O.$('rowBase').hidden && !O.$('rowModel').hidden && !O.$('rowCKey').hidden && O.$('rowVilao').hidden);
+    O.$('customBase').value = 'https://openrouter.ai/api/v1/chat/completions'; O.$('customModel').value = ' openai/gpt-4o-mini '; O.$('customKey').value = 'K1';
+    await O.fire('save', 'click'); await sleep(10);
+    check('lưu tự điền: địa chỉ đã chuẩn hoá, model, key dùng để dịch', O.saved.apiProvider === 'custom' && O.saved.apiBase === 'https://openrouter.ai/api/v1' && O.saved.apiModel === 'openai/gpt-4o-mini' && O.saved.apiKey === 'K1', O.saved);
+    check('lưu tự điền: ô địa chỉ hiện bản đã chuẩn hoá', O.$('customBase').value === 'https://openrouter.ai/api/v1');
+    check('lưu tự điền: key Vilao vẫn giữ riêng', O.saved.vilaoKey === 'SKV');
+    check('lưu tự điền: xin quyền đúng tên miền API', O.perms.includes('https://openrouter.ai/*'), O.perms);
+    check('lưu tự điền: nhãn "đang dùng" hiện ở Nguồn AI', !O.$('srcRented').hidden && O.$('srcGemini').hidden);
+    O.$('apiProvider').value = 'vilao'; await O.fire('apiProvider', 'change'); await O.fire('save', 'click'); await sleep(10);
+    check('đổi lại Vilao: địa chỉ + model Vilao, key Vilao', O.saved.apiBase === 'https://api.vilao.ai/v1' && O.saved.apiModel === 'chib/gemini-3.8-flash' && O.saved.apiKey === 'SKV', O.saved);
+    check('đổi lại Vilao: không mất các ô tự điền', O.saved.customBase === 'https://openrouter.ai/api/v1' && O.saved.customModel === 'openai/gpt-4o-mini' && O.saved.customKey === 'K1');
+
+    // Địa chỉ http:// hoặc thiếu ô: báo lỗi, không dùng để dịch.
+    const H = fakeOptions({ apiProvider: 'custom', customModel: 'm', customKey: 'K' });
+    await sleep(30);
+    H.$('customBase').value = 'http://insecure.example/v1'; await H.fire('save', 'click'); await sleep(10);
+    check('địa chỉ http://: báo phải dùng https://', /https:\/\//.test(H.$('msg').textContent) && H.$('msg').className === 'warn', H.$('msg').textContent);
+    check('địa chỉ http://: không dùng để dịch, đánh dấu ô', H.saved.apiKey === '' && H.$('customBase').classList.contains('bad'), H.saved.apiKey);
+    H.$('customBase').value = 'https://api.x.com/v1'; H.$('customModel').value = ''; await H.fire('save', 'click'); await sleep(10);
+    check('thiếu model: báo thiếu, không dùng để dịch', /model/.test(H.$('msg').textContent) && H.saved.apiKey === '' && !H.$('customBase').classList.contains('bad'), H.$('msg').textContent);
+
+    // Nút "Lấy danh sách": gọi {địa chỉ}/models bằng key, gợi ý tên model.
+    const calls = [];
+    const F = fakeOptions({ apiProvider: 'custom', customBase: 'https://api.x.com/v1', customKey: 'K9' }, async (url, init) => { calls.push([url, init]); return { ok: true, status: 200, json: async () => ({ data: [{ id: 'b-model' }, { id: 'a-model' }] }) }; });
+    await sleep(30);
+    await F.fire('listModels', 'click'); await sleep(10);
+    check('lấy danh sách: gọi /models kèm key', calls.length === 1 && calls[0][0] === 'https://api.x.com/v1/models' && calls[0][1].headers.Authorization === 'Bearer K9', calls);
+    check('lấy danh sách: xin quyền tên miền trước', F.perms.includes('https://api.x.com/*'), F.perms);
+    check('lấy danh sách: gợi ý model theo thứ tự chữ cái', F.$('modelList').children.map(o => o.value).join(',') === 'a-model,b-model', F.$('modelList').children.map(o => o.value));
+    const html = fs.readFileSync(path.join(DIR, 'options/options.html'), 'utf8');
+    check('Cài đặt có danh sách chọn nguồn + 3 ô tự điền', /id="apiProvider"/.test(html) && /value="custom"/.test(html) && /id="customBase"/.test(html) && /id="customModel"[^>]*list="modelList"/.test(html) && /id="customKey"[^>]*type="password"/.test(html));
+  }
+
+  console.log('57. API tự điền chỉ nhận Responses API (/v1/responses): tự chuyển, nhớ theo địa chỉ');
+  {
+    const mk = (store, fetchMock, saved = {}) => {
+      const ctx = { console, fetch: fetchMock, setTimeout, clearTimeout, AbortController, btoa, atob, URL, encodeURIComponent, decodeURIComponent, Uint8Array, DataView, String, JSON, Math, Promise, Error, Object, Array, Date, parseFloat };
+      ctx.chrome = { runtime: { onInstalled: { addListener() {} }, onMessage: { addListener(f) { ctx.handler = f; } } },
+        storage: { local: { get(d, cb) { cb({ ...d, ...store, ...saved }); }, set: o => { Object.assign(saved, o); return Promise.resolve(); } } } };
+      ctx.importScripts = f => vm.runInContext(fs.readFileSync(path.join(DIR, f), 'utf8'), ctx);
+      vm.createContext(ctx);
+      vm.runInContext(fs.readFileSync(path.join(DIR, 'background.js'), 'utf8'), ctx);
+      return m => new Promise(r => ctx.handler(m, {}, r));
+    };
+    const resp = (status, body) => ({ ok: status < 300, status, json: async () => body, text: async () => JSON.stringify(body) });
+    const google = url => resp(200, [[['GOOGLE ' + decodeURIComponent(url.split('&q=')[1] || '')]]]);
+    const BASE = 'https://api.xingchiapi.com/v1';
+    const XC = { apiProvider: 'custom', apiBase: BASE, apiModel: 'gpt-5', apiKey: 'K' };
+    const disabled = resp(400, { error: { code: 'chat_completions_disabled', message: '本站已停用 /v1/chat/completions 接口，请改用 /v1/responses（Responses API）', type: 'invalid_request_error' } });
+    const okResponses = text => resp(200, { output: [{ type: 'reasoning', summary: [] }, { type: 'message', content: [{ type: 'output_text', text }] }] });
+    const seen = [], saved = {};
+    const fx = async (url, init = {}) => {
+      seen.push({ url, auth: init.headers && init.headers.Authorization, body: init.body ? JSON.parse(init.body) : null });
+      if (url.endsWith('/chat/completions')) return disabled;
+      if (url.endsWith('/responses')) return okResponses('{"lines":{"1":"Xin chào"}}');
+      return google(url);
+    };
+    const call = mk(XC, fx, saved);
+    const r = await call({ type: 'translate', lang: 'en', lines: ['Hello.'] });
+    const rq = seen.find(x => x.url === BASE + '/responses');
+    check('chat/completions bị tắt -> gọi lại /responses', !!rq, seen.map(x => x.url));
+    check('Responses: gửi đúng key, model, prompt (instructions) và phụ đề (input)', rq && rq.auth === 'Bearer K' && rq.body.model === 'gpt-5' && typeof rq.body.instructions === 'string' && rq.body.instructions.length > 50 && /Hello\./.test(JSON.stringify(rq.body.input)), rq && rq.body);
+    check('Responses: không lưu hội thoại ở máy chủ (store: false)', rq && rq.body.store === false);
+    check('Responses: đọc bản dịch từ output[].content[].text, dịch bằng AI', r.ok && r.via === 'gemini' && r.translations[0] === 'Xin chào', r);
+    check('nhớ địa chỉ này dùng Responses (lưu vào storage)', saved.apiFormats && saved.apiFormats[BASE] === 'responses', saved);
+    seen.length = 0;
+    await call({ type: 'translate', lang: 'en', lines: ['Good morning.'] });
+    check('lần sau gọi thẳng /responses, không thử chat/completions', seen.some(x => x.url === BASE + '/responses') && !seen.some(x => x.url.endsWith('/chat/completions')), seen.map(x => x.url));
+    // Service worker khởi động lại: đọc kiểu đã nhớ trong storage.
+    const seen2 = [];
+    const call2 = mk({ ...XC, apiFormats: { [BASE]: 'responses' } }, async (url, init) => { seen2.push(url); return url.endsWith('/responses') ? resp(200, { output_text: '{"lines":{"1":"Chào buổi sáng"}}' }) : url.endsWith('/chat/completions') ? disabled : google(url); });
+    const r2 = await call2({ type: 'translate', lang: 'en', lines: ['Good morning.'] });
+    check('đã nhớ trong storage: gọi thẳng /responses', !seen2.some(u => u.endsWith('/chat/completions')) && seen2.includes(BASE + '/responses'), seen2);
+    check('Responses: đọc được output_text', r2.translations && r2.translations[0] === 'Chào buổi sáng', r2);
+    // Địa chỉ khác: không dùng kiểu đã nhớ của địa chỉ cũ.
+    const seen3 = [];
+    const call3 = mk({ ...XC, apiBase: 'https://other.example/v1', apiFormats: { [BASE]: 'responses' } }, async url => { seen3.push(url); return url.endsWith('/chat/completions') ? resp(200, { choices: [{ message: { content: '{"lines":{"1":"A"}}' } }] }) : google(url); });
+    await call3({ type: 'translate', lang: 'en', lines: ['Hello.'] });
+    check('địa chỉ khác vẫn dùng chat/completions', seen3.includes('https://other.example/v1/chat/completions') && !seen3.some(u => u.endsWith('/responses')), seen3);
+    // Lỗi 400 khác: không chuyển sang Responses.
+    const seen4 = [];
+    const call4 = mk(XC, async url => { seen4.push(url); return url.endsWith('/chat/completions') ? resp(400, { error: { message: 'Unsupported parameter: messages[0]' } }) : google(url); });
+    const r4 = await call4({ type: 'translate', lang: 'en', lines: ['Hello.'] });
+    check('lỗi 400 khác: không gọi /responses, dùng Google', !seen4.some(u => u.endsWith('/responses')) && r4.via === 'google', seen4);
+    // Nút "Lưu và thử dịch" cũng đi đường Responses.
+    const call5 = mk(XC, async url => (url.endsWith('/chat/completions') ? disabled : url.endsWith('/responses') ? okResponses('{"lines":{"1":"Xin chào, bạn khoẻ không?"}}') : google(url)));
+    const r5 = await call5({ type: 'test' });
+    check('nút thử dịch: chạy được qua Responses', r5.ok && /hoạt động/.test(r5.reply || '') && /Xin chào/.test(r5.reply || ''), r5);
+  }
+
+  console.log('58. API trả về dạng lạ: đọc được content dạng mảng; lỗi ghi đúng tên nguồn + đoạn trả về');
+  {
+    const mk = (store, fetchMock) => {
+      const ctx = { console, fetch: fetchMock, setTimeout, clearTimeout, AbortController, btoa, atob, URL, encodeURIComponent, decodeURIComponent, Uint8Array, DataView, String, JSON, Math, Promise, Error, Object, Array, Date, parseFloat };
+      ctx.chrome = { runtime: { onInstalled: { addListener() {} }, onMessage: { addListener(f) { ctx.handler = f; } } },
+        storage: { local: { get(d, cb) { cb({ ...d, ...store }); }, set: () => Promise.resolve() } } };
+      ctx.importScripts = f => vm.runInContext(fs.readFileSync(path.join(DIR, f), 'utf8'), ctx);
+      vm.createContext(ctx);
+      vm.runInContext(fs.readFileSync(path.join(DIR, 'background.js'), 'utf8'), ctx);
+      return m => new Promise(r => ctx.handler(m, {}, r));
+    };
+    const resp = (status, body) => ({ ok: status < 300, status, json: async () => body, text: async () => JSON.stringify(body) });
+    const google = url => resp(200, [[['GOOGLE ' + decodeURIComponent(url.split('&q=')[1] || '')]]]);
+    const GPT = { apiProvider: 'custom', apiBase: 'https://gw.example/v1', apiModel: 'gpt-x', apiKey: 'K' };
+    const withReply = body => mk(GPT, async url => (url.endsWith('/chat/completions') ? resp(200, body) : google(url)));
+    // content dạng mảng khối (một số trạm trung gian).
+    const r1 = await withReply({ choices: [{ message: { content: [{ type: 'text', text: '{"lines":{"1":"Xin chào"}}' }] } }] })({ type: 'translate', lang: 'en', lines: ['Hello.'] });
+    check('content dạng mảng [{type:text}]: vẫn đọc được bản dịch', r1.via === 'gemini' && r1.translations[0] === 'Xin chào', r1);
+    // Trả lời chữ thường, không có JSON.
+    const r2 = await withReply({ choices: [{ message: { content: 'Xin chào bạn, tôi khỏe.' } }] })({ type: 'test' });
+    check('không có JSON: lỗi ghi đúng tên nguồn, không ghi "Gemini"', !r2.ok && /API riêng \(gpt-x\)/.test(r2.error || '') && !/Gemini/.test(r2.error || ''), r2);
+    check('không có JSON: lỗi kèm đoạn đầu câu trả lời', /Xin chào bạn, tôi khỏe/.test(r2.error || ''), r2);
+    // Trả về rỗng vì hết giới hạn token.
+    const r3 = await withReply({ choices: [{ message: { content: '' }, finish_reason: 'length' }] })({ type: 'test' });
+    check('trả về rỗng: lỗi nói rõ rỗng + finish_reason', !r3.ok && /rỗng/.test(r3.error || '') && /finish_reason=length/.test(r3.error || '') && /gpt-x/.test(r3.error || ''), r3);
+    // HTTP 200 nhưng thân là lỗi.
+    const r4 = await withReply({ error: { message: 'quota exceeded for this key' } })({ type: 'test' });
+    check('HTTP 200 kèm error: hiện đúng lời báo lỗi của nhà cung cấp', !r4.ok && /quota exceeded for this key/.test(r4.error || ''), r4);
+    // Model từ chối.
+    const r5 = await withReply({ choices: [{ message: { content: null, refusal: 'I cannot help with that.' } }] })({ type: 'test' });
+    check('model từ chối: báo từ chối', !r5.ok && /từ chối/.test(r5.error || '') && /I cannot help/.test(r5.error || ''), r5);
+    // Khi dịch thật: lỗi dạng này vẫn dịch tạm bằng Google, cảnh báo có tên nguồn.
+    const r6 = await withReply({ choices: [{ message: { content: 'not json' } }] })({ type: 'translate', lang: 'en', lines: ['Hello.'] });
+    check('dịch thật: không có JSON -> Google Dịch + cảnh báo có tên nguồn', r6.via === 'google' && /API riêng \(gpt-x\)/.test(r6.warn || '') && /not json/.test(r6.warn || ''), r6);
   }
 
   console.log('\n' + pass + ' đạt, ' + fail + ' lỗi');

@@ -18,13 +18,42 @@
       <div class="panel">
         <div class="item">
           <div class="label">
-            <span class="title">Key Vilao <span class="tip" title="Có key thì dịch bằng Vilao (ưu tiên nhất). Phụ đề được gửi tới máy chủ Vilao. Lỗi hoặc hết tiền thì tự dùng Google Dịch.">i</span> <span class="badge" id="srcVilao" hidden>đang dùng</span></span>
+            <span class="title">Nguồn AI <span class="tip" title="Ưu tiên nhất khi đủ thông tin. Vilao: chỉ cần dán key. Tự điền API: dịch vụ bất kỳ theo chuẩn OpenAI (OpenAI, OpenRouter, DeepSeek…). Phụ đề được gửi tới dịch vụ đã chọn. Lỗi hoặc hết tiền thì tự dùng Google Dịch.">i</span> <span class="badge" id="srcRented" hidden>đang dùng</span></span>
           </div>
-          <div class="ctl"><input id="apiKey" type="password" autocomplete="off" placeholder="sk-…" aria-label="Key Vilao"></div>
+          <div class="ctl">
+            <select id="apiProvider" aria-label="Nguồn AI">
+              <option value="vilao">Vilao</option>
+              <option value="custom">Tự điền API</option>
+            </select>
+          </div>
+        </div>
+        <div class="item" id="rowVilao">
+          <div class="label"><span class="title">Key Vilao</span></div>
+          <div class="ctl"><input id="vilaoKey" type="password" autocomplete="off" placeholder="sk-…" aria-label="Key Vilao"></div>
+        </div>
+        <div class="item" id="rowBase" hidden>
+          <div class="label">
+            <span class="title">Địa chỉ API <span class="tip" title="Địa chỉ gốc theo chuẩn OpenAI, bắt đầu bằng https://. Ví dụ: https://api.openai.com/v1, https://openrouter.ai/api/v1, https://api.deepseek.com/v1">i</span></span>
+          </div>
+          <div class="ctl"><input id="customBase" type="url" autocomplete="off" spellcheck="false" placeholder="https://openrouter.ai/api/v1" aria-label="Địa chỉ API"></div>
+        </div>
+        <div class="item" id="rowModel" hidden>
+          <div class="label">
+            <span class="title">Model <span class="tip" title="Tên model theo tài liệu của dịch vụ, ví dụ gpt-4o-mini. Bấm Lấy danh sách để chọn từ các model key được dùng.">i</span></span>
+          </div>
+          <div class="ctl">
+            <input id="customModel" list="modelList" autocomplete="off" spellcheck="false" placeholder="gpt-4o-mini" aria-label="Model">
+            <datalist id="modelList"></datalist>
+            <button id="listModels" type="button">Lấy danh sách</button>
+          </div>
+        </div>
+        <div class="item" id="rowCKey" hidden>
+          <div class="label"><span class="title">Key</span></div>
+          <div class="ctl"><input id="customKey" type="password" autocomplete="off" placeholder="Key của dịch vụ" aria-label="Key API tự điền"></div>
         </div>
         <div class="item">
           <div class="label">
-            <span class="title">Key Gemini <span class="tip" title="Miễn phí tại aistudio.google.com/apikey. Dùng khi không có key Vilao; tự chuyển model khi hết lượt.">i</span> <span class="badge" id="srcGemini" hidden>đang dùng</span></span>
+            <span class="title">Key Gemini <span class="tip" title="Miễn phí tại aistudio.google.com/apikey. Dùng khi chưa có Nguồn AI ở trên; tự chuyển model khi hết lượt.">i</span> <span class="badge" id="srcGemini" hidden>đang dùng</span></span>
           </div>
           <div class="ctl"><input id="geminiKey" type="password" autocomplete="off" placeholder="AIza…" aria-label="Key Gemini"></div>
         </div>
@@ -40,7 +69,7 @@
           </div>
         </div>
         <div class="item" id="srcGoogleRow" hidden>
-          <div class="label"><span class="title">Google Dịch <span class="badge">đang dùng</span></span><span class="hint">Chưa có key: dán key Vilao hoặc Gemini để dịch hay hơn.</span></div>
+          <div class="label"><span class="title">Google Dịch <span class="badge">đang dùng</span></span><span class="hint">Chưa có key: dán key Vilao, tự điền API hoặc dán key Gemini để dịch hay hơn.</span></div>
         </div>
       </div>
     </section>

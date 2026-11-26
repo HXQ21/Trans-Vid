@@ -114,6 +114,8 @@ input[type=range] { width: 100%; accent-color: var(--accent); margin: 0; }
 .item .hint { display: block; color: var(--muted); font-size: 14px; margin-top: 2px; }
 .item .ctl { width: 330px; flex: none; display: flex; gap: 6px; justify-content: flex-end; }
 .item .ctl > input, .item .ctl > select { flex: 1; min-width: 0; }
+.item .ctl > button { flex: none; white-space: nowrap; }
+.item .ctl > input.bad { border-color: var(--bad); background: var(--bad-soft); }
 .tip { display: inline-flex; width: 17px; height: 17px; border-radius: 50%; border: 1px solid var(--line-strong); color: var(--muted); font-size: 11px; align-items: center; justify-content: center; cursor: help; flex: none; }
 .badge { font-size: 13px; padding: 1px 8px; border-radius: 999px; background: var(--ok-soft); color: var(--ok); font-weight: 500; }
 .footer { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 4px; }
